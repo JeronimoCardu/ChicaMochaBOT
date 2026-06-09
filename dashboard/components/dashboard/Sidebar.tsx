@@ -2,56 +2,28 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
-import {
-  LayoutDashboard,
-  MessageSquare,
-  Package,
-  BarChart3,
-  Beef,
-  Sun,
-  Moon,
-  ExternalLink,
-} from "lucide-react";
+import { LayoutDashboard, MessageSquare, Package, BarChart3, Beef, Sun, Moon, ExternalLink } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useTheme } from "@/components/providers/ThemeProvider";
 
 const NAV = [
-  { href: "/dashboard", label: "Pedidos", icon: LayoutDashboard },
-  { href: "/dashboard/stock", label: "Stock", icon: Package },
-  { href: "/dashboard/conversations", label: "Conversaciones", icon: MessageSquare },
-  { href: "/dashboard/analytics", label: "Métricas", icon: BarChart3 },
+  { href: "/dashboard",               label: "Pedidos",        icon: LayoutDashboard },
+  { href: "/dashboard/stock",         label: "Stock",          icon: Package         },
+  { href: "/dashboard/conversations", label: "Conversaciones", icon: MessageSquare   },
+  { href: "/dashboard/analytics",     label: "Métricas",       icon: BarChart3       },
 ];
 
 const WA_LINK = "https://wa.me/542325471890";
 
 export function Sidebar() {
   const pathname = usePathname();
-  const [isDark, setIsDark] = useState(true);
-
-  useEffect(() => {
-    const saved = localStorage.getItem("theme");
-    setIsDark(saved !== "light");
-  }, []);
-
-  const toggleTheme = () => {
-    const next = !isDark;
-    setIsDark(next);
-    const html = document.documentElement;
-    if (next) {
-      html.classList.remove("light");
-      html.classList.add("dark");
-      localStorage.setItem("theme", "dark");
-    } else {
-      html.classList.remove("dark");
-      html.classList.add("light");
-      localStorage.setItem("theme", "light");
-    }
-  };
+  const { theme, toggleTheme } = useTheme();
+  const isDark = theme === "dark";
 
   return (
-    <aside className="w-56 shrink-0 border-r border-[#1f1f1f] dark:border-[#1f1f1f] flex flex-col h-screen sticky top-0 bg-white dark:bg-transparent">
+    <aside className="w-56 shrink-0 border-r border-gray-200 dark:border-[#1f1f1f] flex flex-col h-screen sticky top-0 bg-white dark:bg-[#0d0d0d]">
       {/* Brand */}
-      <div className="flex items-center gap-2.5 px-5 py-5 border-b border-[#1f1f1f] dark:border-[#1f1f1f]">
+      <div className="flex items-center gap-2.5 px-5 py-5 border-b border-gray-200 dark:border-[#1f1f1f]">
         <div className="w-7 h-7 rounded-md bg-orange-500/20 flex items-center justify-center">
           <Beef className="w-4 h-4 text-orange-400" />
         </div>
@@ -63,8 +35,7 @@ export function Sidebar() {
       {/* Nav */}
       <nav className="flex-1 px-2 py-3 space-y-0.5">
         {NAV.map(({ href, label, icon: Icon }) => {
-          const active =
-            href === "/dashboard" ? pathname === href : pathname.startsWith(href);
+          const active = href === "/dashboard" ? pathname === href : pathname.startsWith(href);
           return (
             <Link
               key={href}
@@ -72,8 +43,8 @@ export function Sidebar() {
               className={cn(
                 "flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors",
                 active
-                  ? "bg-gray-100 dark:bg-white/5 text-gray-900 dark:text-white"
-                  : "text-gray-500 dark:text-zinc-500 hover:text-gray-800 dark:hover:text-zinc-300 hover:bg-gray-50 dark:hover:bg-white/3"
+                  ? "bg-gray-100 dark:bg-white/[0.06] text-gray-900 dark:text-white font-medium"
+                  : "text-gray-500 dark:text-zinc-500 hover:text-gray-900 dark:hover:text-zinc-100 hover:bg-gray-100 dark:hover:bg-white/[0.04]"
               )}
             >
               <Icon className="w-4 h-4 shrink-0" />
@@ -84,8 +55,7 @@ export function Sidebar() {
       </nav>
 
       {/* Footer */}
-      <div className="px-3 py-4 border-t border-gray-100 dark:border-[#1f1f1f] flex items-center gap-2">
-        {/* WhatsApp link */}
+      <div className="px-3 py-4 border-t border-gray-200 dark:border-[#1f1f1f] flex items-center gap-2">
         <a
           href={WA_LINK}
           target="_blank"
@@ -96,7 +66,6 @@ export function Sidebar() {
           <ExternalLink className="w-3 h-3 shrink-0" />
         </a>
 
-        {/* Theme toggle */}
         <button
           onClick={toggleTheme}
           title={isDark ? "Cambiar a modo claro" : "Cambiar a modo oscuro"}

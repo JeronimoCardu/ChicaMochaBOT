@@ -14,7 +14,7 @@ const COLUMNS: { title: string; dotColor: string; filter: (o: Pedido) => boolean
 ];
 
 export function KanbanBoard() {
-  const { orders, loading, newOrderId, updatedIds, updateState } = useOrders();
+  const { orders, loading, newOrderId, updatedIds, updateState, updateOrder, deleteOrder } = useOrders();
 
   const [draggingId,    setDraggingId]    = useState<string | null>(null);
   const [draggingColIdx,setDraggingColIdx]= useState<number | null>(null);
@@ -81,6 +81,8 @@ export function KanbanBoard() {
           draggingId={draggingId}
           draggingColIdx={draggingColIdx}
           onAction={updateState}
+            onEditOrder={updateOrder}
+            onDeleteOrder={deleteOrder}
           onDragStart={handleDragStart}
           onDragEnd={handleDragEnd}
           onReorder={handleReorder}

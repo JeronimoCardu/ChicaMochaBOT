@@ -42,7 +42,7 @@ export function ConversationsTable() {
             <tr
               key={conv.phone}
               className={cn(
-                "hover:bg-gray-50 dark:hover:bg-white/8 transition-colors",
+                "hover:bg-gray-50 dark:hover:bg-white/[0.03] transition-colors",
                 i !== conversations.length - 1 && "border-b border-gray-50 dark:border-[#171717]"
               )}
             >
@@ -95,7 +95,7 @@ export function ConversationsTable() {
                   )}
                   <Link
                     href={`/dashboard/conversations/${conv.phone}`}
-                    className="text-xs px-2.5 py-1.5 rounded-lg bg-gray-100 dark:bg-white/5 text-gray-600 dark:text-zinc-300 hover:bg-gray-200 dark:hover:bg-white/10 transition-colors"
+                    className="text-xs px-4 py-1.5 rounded-lg bg-gray-100 dark:bg-white/5 text-gray-600 dark:text-zinc-300 hover:bg-gray-200 dark:hover:bg-white/10 transition-colors"
                   >
                     Ver
                   </Link>

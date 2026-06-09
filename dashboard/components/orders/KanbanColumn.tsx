@@ -17,6 +17,8 @@ interface Props {
   draggingId: string | null;
   draggingColIdx: number | null;
   onAction: (id: string, next: OrderState) => Promise<boolean>;
+  onEditOrder: (id: string, data: Partial<Pedido>) => Promise<boolean>;
+  onDeleteOrder: (id: string) => Promise<boolean>;
   onDragStart: (id: string, colIdx: number) => void;
   onDragEnd: () => void;
   onReorder: (toId: string, colIdx: number) => void;
@@ -26,7 +28,7 @@ export function KanbanColumn({
   colIdx, title, dotColor, filter, orders,
   columnOrder, newOrderId, updatedIds,
   draggingId, draggingColIdx,
-  onAction, onDragStart, onDragEnd, onReorder,
+  onAction, onEditOrder, onDeleteOrder, onDragStart, onDragEnd, onReorder,
 }: Props) {
   const [dragOverId, setDragOverId] = useState<string | null>(null);
 
@@ -110,6 +112,8 @@ export function KanbanColumn({
                   isUpdated={updatedIds.has(order.id)}
                   isDragging={isBeingDragged}
                   onAction={onAction}
+                  onEditOrder={onEditOrder}
+                  onDeleteOrder={onDeleteOrder}
                 />
               </div>
             );

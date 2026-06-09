@@ -157,5 +157,42 @@ export function useOrders() {
     }
   }, []);
 
-  return { orders, loading, newOrderId, updatedIds, fadingCancelled, updateState, cancelOrder };
+  const updateOrder = useCallback(async (id: string, data: Partial<Pedido>): Promise<boolean> => {
+    locallyActed.current.add(id);
+    setTimeout(() => locallyActed.current.delete(id), 4000);
+    try {
+      const res = await fetch(`/api/orders/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) return false;
+      const { pedido: updated } = await res.json();
+      setOrders((prev) => prev.map((o) => (o.id === id ? updated : o)));
+      return true;
+    } catch {
+      return false;
+    }
+  }, []);
+
+  const deleteOrder = useCallback(async (id: string): Promise<boolean> => {
+    locallyActed.current.add(id);
+    setTimeout(() => locallyActed.current.delete(id), 4000);
+    try {
+      const res = await fetch(`/api/orders/${id}`, { method: "DELETE" });
+      if (!res.ok) return false;
+      setOrders((prev) => prev.filter((o) => o.id !== id));
+      return true;
+    } catch {
+      return false;
+    }
+  }, []);
+
+  const addOrder = useCallback((order: Pedido) => {
+    setOrders((prev) => [order, ...prev]);
+    setNewOrderId(order.id);
+    setTimeout(() => setNewOrderId(null), 3000);
+  }, []);
+
+  return { orders, loading, newOrderId, updatedIds, fadingCancelled, updateState, cancelOrder, updateOrder, deleteOrder, addOrder };
 }

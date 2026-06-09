@@ -1,6 +1,7 @@
 import { KPIGrid } from "@/components/dashboard/KPIGrid";
 import { KanbanBoard } from "@/components/orders/KanbanBoard";
 import { WaitTimeConfig } from "@/components/dashboard/WaitTimeConfig";
+import { NewOrderButton } from "@/components/dashboard/NewOrderButton";
 
 export default function DashboardPage() {
   return (
@@ -10,7 +11,8 @@ export default function DashboardPage() {
           <h1 className="text-lg font-semibold text-gray-900 dark:text-white mb-1">Pedidos</h1>
           <p className="text-sm text-gray-400 dark:text-zinc-500">Gestión en tiempo real · hoy</p>
         </div>
-        <div className="w-100 shrink-0">
+        <div className="flex items-center gap-3 shrink-0">
+          <NewOrderButton />
           <WaitTimeConfig />
         </div>
       </div>
