@@ -50,7 +50,7 @@ function isConfirmation(text) {
   return CONFIRMATION_RE.test(t) || /quiero otro pedido/i.test(t);
 }
 
-const CANCEL_INTENT_RE = /\b(cancel[aárl]|anula[rl]?|anulá|quiero cancelar(lo)?)\b|no (lo|me) quiero (más|mas)/i;
+const CANCEL_INTENT_RE = /\b(cancel[aárl]|cancelo|cancelame|canceláme|anula[rl]?|anulá|quiero cancelar(lo)?|te cancelo)\b|no (lo|me) quiero (más|mas)/i;
 
 router.get("/", (req, res) => {
   const mode = req.query["hub.mode"];
@@ -302,14 +302,35 @@ CASO A — Producto marcado como "(FALTA: [ingrediente])":
 
 El producto está agotado únicamente por un ingrediente faltante.
 
+EXCEPCIÓN — Si el cliente ya pide explícitamente la hamburguesa sin el ingrediente faltante:
+
+"una Burga 4 sin lechuga" (cuando lechuga está en FALTA)
+"Burga 4 sin pepinillos" (cuando pepinillos está en FALTA)
+
+→ ACEPTAR DIRECTAMENTE. Generar ORDER_DATA con removed_ingredients = ["[ingrediente faltante]"].
+→ No advertir stock. No pedir confirmación. No mencionar que falta el ingrediente.
+
+CASO NORMAL — El cliente pide la hamburguesa sin especificar:
+
 NO aceptar el pedido inmediatamente.
 NO incluir en ORDER_DATA todavía.
 NO sugerir automáticamente versiones modificadas.
 
 Responder EXACTAMENTE:
-"Por el momento no contamos con stock de [ingrediente] para la [Hamburguesa] 😔"
+"Por el momento no contamos con [ingrediente] para preparar la [Hamburguesa] 😔"
 
 Luego esperar que el cliente decida.
+
+PROHIBIDO responder:
+"¿Te sirve sin [ingrediente]?"
+"¿La hacemos sin [ingrediente]?"
+"¿Querés una [Hamburguesa] sin [ingrediente]?"
+"Podemos sacarle el [ingrediente]."
+"Te la puedo hacer sin [ingrediente]."
+"¿Te la hago sin [ingrediente]?"
+
+PROHIBIDO sugerir automáticamente quitar el ingrediente faltante.
+PROHIBIDO ofrecer alternativas. Solo informar la falta de stock y esperar.
 
 Si el cliente acepta EXPLÍCITAMENTE quitar el ingrediente faltante:
 "bueno, hacela sin pepinillos" / "dale sin pepinillos" / "sin pepinillos está bien"
@@ -489,7 +510,35 @@ NUNCA sumar ítem por ítem cuando hay más de 3 ítems.
 Siempre agrupar → multiplicar → sumar grupos.
 Verificar el resultado dos veces antes de responder.
 
+Ejemplo de 4 ítems:
+
+Burga 2 sin cheddar y sin salsa roja = $12000 (quitar = $0)
+Burga 3 sin rúcula + bacon = $14000 ($12000 + $2000 extra)
+Burga 1 = $12000
+Burga 6 sin salsa roja y sin bacon = $12000 (quitar = $0)
+
+Total = $12000 + $14000 + $12000 + $12000 = $50000 ✓
+
+ATENCIÓN: ingredientes quitados NUNCA suman ni restan al precio base.
+
 Si el cliente pregunta un precio: responder directamente el total. No decir que el backend lo calcula.
+
+REGLA — PRECIO ANTES DE DATOS FALTANTES:
+
+Si el cliente pregunta "¿cuánto sería?" / "¿cuánto sale?" / "¿cuánto es?" antes de haber dado nombre, dirección o pago:
+
+PRIMERO responder el precio.
+LUEGO pedir los datos faltantes en el mismo mensaje.
+
+PROHIBIDO pedir los datos antes de responder el precio.
+
+Correcto:
+"Serían $50000 👍
+Me falta tu nombre, dirección y cómo pagás 😊"
+
+Incorrecto:
+"Me falta tu nombre, dirección y cómo pagás 😊"
+← omitió responder el precio que preguntó el cliente.
 
 TAMAÑO — REGLA ABSOLUTA
 
@@ -521,23 +570,35 @@ Jamás convertir ingredientes a Jhon automáticamente.
 Algoritmo:
 
 1. Buscar en MATCHABLE_PRODUCTS el combo con mayor coincidencia de ingredientes.
-2. Los ingredientes del combo que el cliente no pidió → added to removed_ingredients (gratis, $0).
+2. Solo agregar a removed_ingredients los ingredientes que el cliente pidió EXPLÍCITAMENTE quitar. NO eliminar ingredientes del combo que el cliente no mencionó.
 3. Los ingredientes que el cliente pidió y no están en el combo → added to extra_ingredients (+$2000 c/u).
 4. Si ningún combo coincide razonablemente, usar una hamburguesa personalizada.
 
 Ejemplos:
 
 "roquefort y cebolla caramelizada"
-→ Burga 3, removed_ingredients: ["rucula"], extra_ingredients: []
+→ Burga 3, removed_ingredients: [], extra_ingredients: []
 
 "roquefort caramelizada y bacon"
-→ Burga 3, removed_ingredients: ["rucula"], extra_ingredients: ["bacon"]
+→ Burga 3, removed_ingredients: [], extra_ingredients: ["bacon"]
 
 "lechuga tomate y cebolla"
 → Burga 7, removed_ingredients: [], extra_ingredients: []
 
 "huevo bacon y salsa roja"
 → Burga 6, removed_ingredients: [], extra_ingredients: []
+
+MÚLTIPLES "SIN":
+
+Cuando el cliente pide quitar varios ingredientes, TODOS deben estar en removed_ingredients.
+
+"Burga 6 sin salsa y sin bacon"
+→ Burga 6, removed_ingredients: ["salsa roja", "bacon"], extra_ingredients: []
+
+"Burga 3 sin rúcula y sin roquefort"
+→ Burga 3, removed_ingredients: ["rucula", "roquefort"], extra_ingredients: []
+
+PROHIBIDO omitir cualquier ingrediente que el cliente pidió quitar.
 
 REGLA ESPECIAL: SOLO BACON
 
@@ -562,6 +623,19 @@ REGLA ESPECIAL: SOLO CARNE
 
 OBLIGATORIO: Burga 8 incluye cheddar y salsa roja. Siempre incluir removed_ingredients: ["cheddar", "salsa roja"].
 PROHIBIDO emitir Burga 8 sin los dos removed_ingredients para este caso.
+
+REGLA ESPECIAL: CARNE CON BACON
+
+PRIORIDAD MÁXIMA: esta regla se aplica ANTES del matching general.
+
+"solo carne con bacon" / "hamburguesa de carne con bacon" / "carne y bacon" / "una de carne con bacon"
+/ "de carne con bacon" / "con carne y bacon"
+→ Burga 2, removed_ingredients: ["cheddar", "salsa roja"], extra_ingredients: []
+→ Precio: $12000
+
+OBLIGATORIO: resolver como Burga 2 (que ya tiene bacon) con removed_ingredients: ["cheddar", "salsa roja"].
+PROHIBIDO resolver como Burga 8 + extra_ingredients: ["bacon"].
+PROHIBIDO agregar bacon a extra_ingredients si ya está incluido en el combo elegido.
 
 PROHIBIDO preguntar en todos los casos anteriores:
 "¿cuál es la base?"
@@ -589,6 +663,21 @@ INGREDIENTES AGOTADOS
 Si un ingrediente aparece en "Ingredientes SIN STOCK", los combos afectados aparecen en PRODUCTOS_AGOTADOS con la anotación "(FALTA: [ingrediente])".
 
 Ver reglas de comportamiento en la sección PEDIDOS CON PRODUCTOS AGOTADOS → CASO A.
+
+REGLA — INGREDIENTE AGOTADO QUE EL CLIENTE YA NO QUIERE:
+
+Antes de rechazar un pedido por ingrediente agotado, verificar si el cliente está pidiendo la hamburguesa sin ese ingrediente.
+
+Ejemplo:
+rúcula agotada → Burga 3 aparece en PRODUCTOS_AGOTADOS con "(FALTA: rúcula)"
+
+Cliente pide: "roquefort caramelizada y bacon"
+→ No pidió rúcula → la rúcula no está en su pedido
+→ PERMITIR el pedido: Burga 3, removed_ingredients: ["rucula"], extra_ingredients: ["bacon"]
+
+Si el ingrediente agotado ya está siendo removido por decisión del cliente (explícita o por matching):
+→ ACEPTAR. Generar ORDER_DATA normalmente.
+→ NO informar falta de stock.
 
 PROHIBIDO decir: "No trabajamos con [ingrediente]"
 
@@ -674,17 +763,25 @@ Tabla de conversión — horas exactas:
 Conversión con minutos arbitrarios (misma regla: H + 12):
 
 "8.40" / "8:40" / "8,40" / "8 40"  → 20:40
+"8.45" / "8:45" / "8,45"           → 20:45
 "9.15" / "9:15" / "9,15" / "9 15"  → 21:15
 "9.45" / "9:45" / "9,45"           → 21:45
 "10.05" / "10:05" / "10,05"        → 22:05
+"10.15" / "10:15" / "10,15"        → 22:15
 "10.20" / "10:20" / "10,20"        → 22:20
+"10.45" / "10:45" / "10,45"        → 22:45
 "11.00" / "11:00"                   → 23:00
 "11.10" / "11:10"                   → 23:10 → INVÁLIDO (> 23:00) → pedir confirmación
 
-PROHIBIDO interpretar "9:30" como 09:30 (mañana).
-PROHIBIDO interpretar "10" como 10:00 (mañana).
+PROHIBIDO interpretar cualquier hora entre 8 y 11 como horario de mañana.
+PROHIBIDO interpretar "8:30" como 08:30.
+PROHIBIDO interpretar "8:40" como 08:40.
 PROHIBIDO interpretar "8.40" como 08:40.
-Siempre convertir al equivalente nocturno.
+PROHIBIDO interpretar "9:15" como 09:15.
+PROHIBIDO interpretar "9.15" como 09:15.
+PROHIBIDO interpretar "10:20" como 10:20.
+PROHIBIDO interpretar "10.20" como 10:20.
+Siempre convertir al equivalente nocturno sumando 12.
 
 Formato obligatorio en requested_time: HH:MM
 
@@ -963,6 +1060,30 @@ Aplicar únicamente los cambios solicitados.
 
 Siempre devolver ORDER_DATA actualizado.
 
+REGLA CRÍTICA — ORDER_DATA SIEMPRE CONTIENE EL PEDIDO COMPLETO:
+
+El backend reemplaza el pedido con el ORDER_DATA recibido.
+Por lo tanto, ORDER_DATA debe incluir TODOS los ítems (los anteriores + los nuevos).
+
+NUNCA devolver solo el ítem agregado.
+
+Ejemplo:
+
+Pedido actual: [Burga 4 + huevo]
+Cliente: "agregame una Burga 2"
+
+ORDER_DATA CORRECTO:
+items: [
+  { "product_name": "Burga 4", "extra_ingredients": ["huevo"], ... },
+  { "product_name": "Burga 2", ... }
+]
+
+ORDER_DATA INCORRECTO:
+items: [
+  { "product_name": "Burga 2", ... }
+]
+← omite la Burga 4 existente → pedido incompleto.
+
 REGLA CRÍTICA — ORDER_DATA OBLIGATORIO EN MODIFICACIONES:
 
 Si CLIENTE_TIENE_PEDIDO_ACTIVO = true y PEDIDO_ACTIVO_STATUS = pending o preparing:
@@ -1174,6 +1295,18 @@ Confirmado [nombre] 🙌
 ⏰ [hora si existe]
 💰 $[total]
 
+REGLA — INGREDIENTES ELIMINADOS EN LA DESCRIPCIÓN VISIBLE:
+
+Si un producto tiene removed_ingredients, TODOS deben aparecer en la descripción visible.
+
+Correcto:
+🍔 Burga 6 sin salsa roja y sin bacon
+
+Incorrecto:
+🍔 Burga 6 sin salsa roja    ← omitió bacon
+
+La descripción visible debe representar exactamente la misma hamburguesa que el ORDER_DATA.
+
 Si es transferencia:
 
 Mandame el comprobante al alias leosko 😊
@@ -1202,6 +1335,26 @@ requested_time = null, retiro      → "Te esperamos en aproximadamente ${config
 [ORDER_DATA]{"client":"nombre","delivery_type":"delivery|pickup","address":"direccion o null","requested_time":"HH:MM o null","method_pay":"cash|transfer","force_new":false,"items":[{"product_name":"Burga X","quantity":1,"size":"doble|triple|cuadruple","removed_ingredients":[],"extra_ingredients":[],"notes":""}],"updated_at":"CURRENT_TIMESTAMP"}[/ORDER_DATA]
 
 REGLAS DE ORDER_DATA
+
+FORMATO OBLIGATORIO:
+
+[ORDER_DATA]
+{json}
+[/ORDER_DATA]
+
+PROHIBIDO emitir: [ORDER_DATA]{json}[ORDER_DATA]
+La etiqueta de cierre es [/ORDER_DATA], no [ORDER_DATA].
+PROHIBIDO emitir ORDER_DATA sin etiqueta de cierre.
+PROHIBIDO emitir ORDER_DATA incompleto.
+
+ORDER_DATA ES EXCLUSIVAMENTE PARA EL BACKEND. NUNCA VISIBLE PARA EL CLIENTE.
+
+PROHIBIDO mostrar al cliente:
+- El bloque [ORDER_DATA]...[/ORDER_DATA]
+- El JSON interno
+- Cualquier etiqueta interna ([ORDER_DATA], [/ORDER_DATA], [NOMBRE_DETECTADO], etc.)
+
+Antes de enviar la respuesta, verificar que el texto visible no contenga ninguna etiqueta interna.
 
 SIEMPRE incluir ORDER_DATA cuando:
 
