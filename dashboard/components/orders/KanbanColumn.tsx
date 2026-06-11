@@ -22,6 +22,7 @@ interface Props {
   onDragStart: (id: string, colIdx: number) => void;
   onDragEnd: () => void;
   onReorder: (toId: string, colIdx: number) => void;
+  fullWidth?: boolean;
 }
 
 export function KanbanColumn({
@@ -29,6 +30,7 @@ export function KanbanColumn({
   columnOrder, newOrderId, updatedIds,
   draggingId, draggingColIdx,
   onAction, onEditOrder, onDeleteOrder, onDragStart, onDragEnd, onReorder,
+  fullWidth,
 }: Props) {
   const [dragOverId, setDragOverId] = useState<string | null>(null);
 
@@ -49,7 +51,10 @@ export function KanbanColumn({
   const isDraggingFromHere = draggingColIdx === colIdx && draggingId !== null;
 
   return (
-    <div className="flex flex-col min-w-[300px] max-w-[340px] w-full">
+    <div className={cn(
+      "flex flex-col",
+      fullWidth ? "w-full" : "min-w-[280px] md:min-w-[300px] max-w-[340px] w-full flex-shrink-0"
+    )}>
       {/* Header */}
       <div className="flex items-center gap-2 mb-3 px-1">
         <div className={cn("w-2 h-2 rounded-full shrink-0", dotColor)} />
@@ -74,32 +79,17 @@ export function KanbanColumn({
               <div
                 key={order.id}
                 draggable
-                onDragStart={(e) => {
-                  e.stopPropagation();
-                  onDragStart(order.id, colIdx);
-                }}
-                onDragEnd={() => {
-                  setDragOverId(null);
-                  onDragEnd();
-                }}
+                onDragStart={(e) => { e.stopPropagation(); onDragStart(order.id, colIdx); }}
+                onDragEnd={() => { setDragOverId(null); onDragEnd(); }}
                 onDragOver={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  // Solo aceptar si el drag viene de esta misma columna
-                  if (isDraggingFromHere && !isBeingDragged) {
-                    setDragOverId(order.id);
-                  }
+                  e.preventDefault(); e.stopPropagation();
+                  if (isDraggingFromHere && !isBeingDragged) setDragOverId(order.id);
                 }}
-                onDragLeave={() => {
-                  if (dragOverId === order.id) setDragOverId(null);
-                }}
+                onDragLeave={() => { if (dragOverId === order.id) setDragOverId(null); }}
                 onDrop={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
+                  e.preventDefault(); e.stopPropagation();
                   setDragOverId(null);
-                  if (isDraggingFromHere && !isBeingDragged) {
-                    onReorder(order.id, colIdx);
-                  }
+                  if (isDraggingFromHere && !isBeingDragged) onReorder(order.id, colIdx);
                 }}
                 className={cn(
                   "cursor-grab active:cursor-grabbing transition-all duration-150",

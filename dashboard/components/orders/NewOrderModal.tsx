@@ -77,7 +77,7 @@ function ItemEditor({
   const sizes = isJhon ? JHON_SIZES : SIZES;
 
   return (
-    <div className="bg-gray-50 dark:bg-[#171717] border border-gray-200 dark:border-[#252525] rounded-xl p-4 space-y-3">
+    <div className="bg-gray-50 dark:bg-[#171717] border border-gray-200 dark:border-[#252525] rounded-xl p-3.5 space-y-3">
       <div className="flex items-center gap-2 flex-wrap">
         <select
           value={item.product_name}
@@ -85,30 +85,34 @@ function ItemEditor({
             const name = e.target.value;
             onChange({ product_name: name, removed_ingredients: [], extra_ingredients: [], size: name === "Jhon" ? "simple" : "doble" });
           }}
-          className="flex-1 min-w-0 px-3 py-1.5 text-sm bg-white dark:bg-[#111111] border border-gray-200 dark:border-[#2a2a2a] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-orange-400/30"
+          className="flex-1 min-w-0 px-3 py-2 text-sm bg-white dark:bg-[#111111] border border-gray-200 dark:border-[#2a2a2a] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-orange-400/30"
         >
           {ALL_PRODUCT_NAMES.map((n) => <option key={n} value={n}>{n}</option>)}
         </select>
 
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1.5 shrink-0">
           <button type="button" onClick={() => onChange({ quantity: Math.max(1, item.quantity - 1) })}
-            className="w-6 h-6 flex items-center justify-center rounded-md bg-gray-100 dark:bg-[#222] text-gray-600 dark:text-zinc-400 hover:bg-gray-200 dark:hover:bg-[#2a2a2a]">
-            <Minus className="w-3 h-3" />
+            className="w-8 h-8 flex items-center justify-center rounded-md bg-gray-100 dark:bg-[#222] text-gray-600 dark:text-zinc-400 hover:bg-gray-200 dark:hover:bg-[#2a2a2a] transition-colors">
+            <Minus className="w-3.5 h-3.5" />
           </button>
-          <span className="text-sm font-medium text-gray-900 dark:text-white w-5 text-center">{item.quantity}</span>
+          <span className="text-sm font-medium text-gray-900 dark:text-white w-6 text-center">{item.quantity}</span>
           <button type="button" onClick={() => onChange({ quantity: item.quantity + 1 })}
-            className="w-6 h-6 flex items-center justify-center rounded-md bg-gray-100 dark:bg-[#222] text-gray-600 dark:text-zinc-400 hover:bg-gray-200 dark:hover:bg-[#2a2a2a]">
-            <Plus className="w-3 h-3" />
+            className="w-8 h-8 flex items-center justify-center rounded-md bg-gray-100 dark:bg-[#222] text-gray-600 dark:text-zinc-400 hover:bg-gray-200 dark:hover:bg-[#2a2a2a] transition-colors">
+            <Plus className="w-3.5 h-3.5" />
           </button>
         </div>
 
-        <select value={item.size} onChange={(e) => onChange({ size: e.target.value as BurgerSize })}
-          className="px-2 py-1.5 text-xs bg-white dark:bg-[#111111] border border-gray-200 dark:border-[#2a2a2a] rounded-lg text-gray-900 dark:text-white focus:outline-none capitalize">
+        <select
+          value={item.size}
+          onChange={(e) => onChange({ size: e.target.value as BurgerSize })}
+          className="px-2 py-2 text-sm bg-white dark:bg-[#111111] border border-gray-200 dark:border-[#2a2a2a] rounded-lg text-gray-900 dark:text-white focus:outline-none capitalize shrink-0"
+        >
           {sizes.map((s) => <option key={s} value={s}>{s}</option>)}
         </select>
 
-        <button type="button" onClick={onRemove} className="p-1.5 text-red-400 hover:text-red-500 transition-colors">
-          <Trash2 className="w-3.5 h-3.5" />
+        <button type="button" onClick={onRemove}
+          className="p-2 text-red-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-400/10 rounded-lg transition-colors shrink-0">
+          <Trash2 className="w-4 h-4" />
         </button>
       </div>
 
@@ -118,7 +122,7 @@ function ItemEditor({
           <div className="flex flex-wrap gap-1.5">
             {comboIngs.map((ing) => (
               <button key={ing} type="button" onClick={() => toggleRemoved(ing)}
-                className={cn("text-xs px-2.5 py-1 rounded-full border transition-colors",
+                className={cn("text-xs px-2.5 py-1.5 rounded-full border transition-colors",
                   item.removed_ingredients.includes(ing)
                     ? "bg-red-50 dark:bg-red-400/10 text-red-600 dark:text-red-400 border-red-200 dark:border-red-400/20"
                     : "bg-white dark:bg-[#111111] text-gray-500 dark:text-zinc-500 border-gray-200 dark:border-[#2a2a2a] hover:border-red-200 dark:hover:border-red-400/20"
@@ -135,7 +139,7 @@ function ItemEditor({
         <div className="flex flex-wrap gap-1.5">
           {extraCandidates.map((ing) => (
             <button key={ing} type="button" onClick={() => toggleExtra(ing)}
-              className={cn("text-xs px-2.5 py-1 rounded-full border transition-colors",
+              className={cn("text-xs px-2.5 py-1.5 rounded-full border transition-colors",
                 item.extra_ingredients.includes(ing)
                   ? "bg-green-50 dark:bg-green-400/10 text-green-600 dark:text-green-400 border-green-200 dark:border-green-400/20"
                   : "bg-white dark:bg-[#111111] text-gray-500 dark:text-zinc-500 border-gray-200 dark:border-[#2a2a2a] hover:border-green-200 dark:hover:border-green-400/20"
@@ -186,8 +190,7 @@ export function NewOrderModal({ onSave, onClose }: Props) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          cell: cell.trim(),
-          client: client.trim(),
+          cell: cell.trim(), client: client.trim(),
           delivery_type: deliveryType,
           address: deliveryType === "delivery" ? address : null,
           method_pay: methodPay,
@@ -212,23 +215,29 @@ export function NewOrderModal({ onSave, onClose }: Props) {
   };
 
   return (
-    <div className="fixed inset-0 bg-black/60 z-50 flex items-start justify-center p-4 overflow-y-auto" onClick={onClose}>
-      <div className="bg-white dark:bg-[#111111] border border-gray-200 dark:border-[#1f1f1f] rounded-2xl w-full max-w-2xl my-8 shadow-2xl" onClick={(e) => e.stopPropagation()}>
-
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 dark:border-[#1f1f1f]">
+    /* Backdrop */
+    <div className="fixed inset-0 bg-black/60 z-50 flex flex-col sm:items-start sm:justify-center sm:p-4 sm:overflow-y-auto" onClick={onClose}>
+      {/* Modal */}
+      <div
+        className="w-full sm:max-w-2xl sm:mx-auto sm:my-8 bg-white dark:bg-[#111111] sm:border sm:border-gray-200 sm:dark:border-[#1f1f1f] sm:rounded-2xl flex flex-col h-full sm:h-auto sm:max-h-[90dvh] sm:shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 dark:border-[#1f1f1f] shrink-0">
           <h2 className="text-base font-semibold text-gray-900 dark:text-white">Nuevo pedido</h2>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-white/5 text-gray-400 dark:text-zinc-500 transition-colors">
+          <button onClick={onClose} className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-white/5 text-gray-400 dark:text-zinc-500 transition-colors">
             <X className="w-4 h-4" />
           </button>
         </div>
 
-        <div className="p-6 space-y-5">
-          <div className="grid grid-cols-2 gap-4">
+        {/* Content — scrollable */}
+        <div className="flex-1 overflow-y-auto p-5 space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <Field label="Cliente">
               <input value={client} onChange={(e) => setClient(e.target.value)} placeholder="Nombre o apellido" className={inputCls} />
             </Field>
             <Field label="Teléfono">
-              <input value={cell} onChange={(e) => setCell(e.target.value)} placeholder="549XXXXXXXXX" className={inputCls} />
+              <input value={cell} onChange={(e) => setCell(e.target.value)} placeholder="549XXXXXXXXX" className={inputCls} inputMode="numeric" />
             </Field>
           </div>
 
@@ -236,7 +245,7 @@ export function NewOrderModal({ onSave, onClose }: Props) {
             <div className="flex gap-2">
               {(["delivery", "pickup"] as DeliveryType[]).map((t) => (
                 <button key={t} type="button" onClick={() => setDeliveryType(t)}
-                  className={cn("px-4 py-2 rounded-lg text-sm font-medium transition-colors border",
+                  className={cn("flex-1 sm:flex-none px-4 py-2.5 rounded-lg text-sm font-medium transition-colors border",
                     deliveryType === t
                       ? "bg-orange-50 dark:bg-orange-400/10 text-orange-600 dark:text-orange-400 border-orange-200 dark:border-orange-400/20"
                       : "bg-gray-50 dark:bg-[#1a1a1a] text-gray-600 dark:text-zinc-400 border-gray-200 dark:border-[#2a2a2a]"
@@ -257,7 +266,7 @@ export function NewOrderModal({ onSave, onClose }: Props) {
             <div className="flex gap-2 flex-wrap">
               {(["cash", "transfer", "mp"] as MethodPay[]).map((m) => (
                 <button key={m} type="button" onClick={() => setMethodPay(m)}
-                  className={cn("px-4 py-2 rounded-lg text-sm font-medium transition-colors border",
+                  className={cn("flex-1 sm:flex-none px-4 py-2.5 rounded-lg text-sm font-medium transition-colors border",
                     methodPay === m
                       ? "bg-blue-50 dark:bg-blue-400/10 text-blue-600 dark:text-blue-400 border-blue-200 dark:border-blue-400/20"
                       : "bg-gray-50 dark:bg-[#1a1a1a] text-gray-600 dark:text-zinc-400 border-gray-200 dark:border-[#2a2a2a]"
@@ -290,7 +299,8 @@ export function NewOrderModal({ onSave, onClose }: Props) {
           {error && <p className="text-xs text-red-500 dark:text-red-400">{error}</p>}
         </div>
 
-        <div className="flex items-center justify-between px-6 py-4 border-t border-gray-100 dark:border-[#1f1f1f]">
+        {/* Footer */}
+        <div className="flex items-center justify-between px-5 py-4 border-t border-gray-100 dark:border-[#1f1f1f] shrink-0 bg-white dark:bg-[#111111]">
           <div className="flex items-center gap-2">
             <span className="text-xs text-gray-400 dark:text-zinc-600">$</span>
             <input
@@ -302,18 +312,17 @@ export function NewOrderModal({ onSave, onClose }: Props) {
             />
             {customTotal !== "" && Number(customTotal) !== calculatedTotal && (
               <button type="button" onClick={() => setCustomTotal("")}
-                className="text-xs text-gray-400 dark:text-zinc-600 hover:text-gray-600 dark:hover:text-zinc-400 transition-colors"
-                title="Restablecer al calculado">
+                className="text-xs text-gray-400 dark:text-zinc-600 hover:text-gray-600 dark:hover:text-zinc-400 transition-colors hidden sm:inline">
                 ↺ {calculatedTotal.toLocaleString("es-AR")}
               </button>
             )}
           </div>
           <div className="flex gap-2">
-            <button onClick={onClose} className="px-4 py-2 text-sm text-gray-600 dark:text-zinc-400 hover:text-gray-900 dark:hover:text-white transition-colors">
+            <button onClick={onClose} className="px-4 py-2.5 text-sm text-gray-600 dark:text-zinc-400 hover:text-gray-900 dark:hover:text-white transition-colors">
               Cancelar
             </button>
             <button onClick={handleSave} disabled={saving}
-              className="px-5 py-2 text-sm font-medium bg-orange-500 hover:bg-orange-600 disabled:opacity-50 text-white rounded-lg transition-colors">
+              className="px-5 py-2.5 text-sm font-medium bg-orange-500 hover:bg-orange-600 active:bg-orange-700 disabled:opacity-50 text-white rounded-lg transition-colors">
               {saving ? "Creando…" : "Crear pedido"}
             </button>
           </div>
@@ -333,4 +342,4 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 }
 
 const labelCls = "text-xs font-medium text-gray-500 dark:text-zinc-500 uppercase tracking-wider mb-1.5 block";
-const inputCls = "w-full px-3 py-2 text-sm bg-gray-50 dark:bg-[#1a1a1a] border border-gray-200 dark:border-[#2a2a2a] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-orange-400/30";
+const inputCls = "w-full px-3 py-2.5 text-sm bg-gray-50 dark:bg-[#1a1a1a] border border-gray-200 dark:border-[#2a2a2a] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-orange-400/30";

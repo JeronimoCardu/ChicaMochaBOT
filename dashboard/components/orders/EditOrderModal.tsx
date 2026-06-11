@@ -312,27 +312,27 @@ export function EditOrderModal({ pedido, onSave, onClose }: Props) {
 
   return (
     <div
-      className="fixed inset-0 bg-black/60 z-50 flex items-start justify-center p-4 overflow-y-auto"
+      className="fixed inset-0 bg-black/60 z-50 flex flex-col sm:items-start sm:justify-center sm:p-4 sm:overflow-y-auto"
       onClick={onClose}
     >
       <div
-        className="bg-white dark:bg-[#111111] border border-gray-200 dark:border-[#1f1f1f] rounded-2xl w-full max-w-2xl my-8 shadow-2xl"
+        className="w-full sm:max-w-2xl sm:mx-auto sm:my-8 bg-white dark:bg-[#111111] sm:border sm:border-gray-200 sm:dark:border-[#1f1f1f] rounded-none sm:rounded-2xl flex flex-col h-full sm:h-auto sm:max-h-[90dvh] sm:shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 dark:border-[#1f1f1f]">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 dark:border-[#1f1f1f] shrink-0">
           <h2 className="text-base font-semibold text-gray-900 dark:text-white">
             Editar pedido
           </h2>
           <button
             onClick={onClose}
-            className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-white/5 text-gray-400 dark:text-zinc-500 transition-colors"
+            className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-white/5 text-gray-400 dark:text-zinc-500 transition-colors"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
 
-        <div className="p-6 space-y-5">
+        <div className="flex-1 overflow-y-auto p-5 space-y-4">
           <Field label="Cliente">
             <input
               value={client}
@@ -454,7 +454,7 @@ export function EditOrderModal({ pedido, onSave, onClose }: Props) {
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-between px-6 py-4 border-t border-gray-100 dark:border-[#1f1f1f]">
+        <div className="flex items-center justify-between px-5 py-4 border-t border-gray-100 dark:border-[#1f1f1f] shrink-0 bg-white dark:bg-[#111111]">
           <div className="flex items-center gap-2">
             <span className="text-xs text-gray-400 dark:text-zinc-600">$</span>
             <input
