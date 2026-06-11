@@ -5,7 +5,7 @@ import { NewOrderButton } from "@/components/dashboard/NewOrderButton";
 
 export default function DashboardPage() {
   return (
-    <div className="flex flex-col h-full p-4 md:p-5 gap-4 md:gap-5">
+    <div className="flex flex-col p-4 md:p-5 gap-4 md:gap-5 md:h-full">
       {/* Header row */}
       <div className="flex items-center justify-between gap-3 shrink-0">
         <div>
@@ -15,8 +15,8 @@ export default function DashboardPage() {
         <NewOrderButton />
       </div>
 
-      {/* Wait time config — scrollable on xs if it overflows */}
-      <div className="shrink-0 overflow-x-auto pb-0.5">
+      {/* Wait time config */}
+      <div className="shrink-0">
         <WaitTimeConfig />
       </div>
 
@@ -25,8 +25,8 @@ export default function DashboardPage() {
         <KPIGrid />
       </div>
 
-      {/* Kanban — fills remaining height */}
-      <div className="flex-1 flex flex-col min-h-0">
+      {/* Kanban */}
+      <div className="md:flex-1 md:flex md:flex-col md:min-h-0">
         <KanbanBoard />
       </div>
     </div>

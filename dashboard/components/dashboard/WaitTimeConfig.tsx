@@ -51,7 +51,7 @@ export function WaitTimeConfig() {
   const { config, loading, saving, updateValue } = useConfig();
 
   return (
-    <div className="inline-flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-5 bg-white dark:bg-[#111111] border border-gray-200 dark:border-[#1f1f1f] rounded-xl px-4 py-3 shadow-sm dark:shadow-none">
+    <div className="flex flex-col sm:inline-flex sm:flex-row items-start sm:items-center gap-3 sm:gap-5 bg-white dark:bg-[#111111] border border-gray-200 dark:border-[#1f1f1f] rounded-xl px-4 py-3 shadow-sm dark:shadow-none">
       <Timer className="hidden sm:block w-4 h-4 text-gray-400 dark:text-zinc-500 shrink-0" />
       <WaitField
         label="Retiro"

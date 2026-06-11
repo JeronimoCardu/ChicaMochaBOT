@@ -75,7 +75,7 @@ export function OrderCard({ order, isNew, isUpdated, isDragging, onAction, onEdi
       {/* Header */}
       <div className="flex items-start justify-between gap-2">
         <div className="flex items-center gap-2 min-w-0">
-          <GripVertical className="w-3.5 h-3.5 text-gray-300 dark:text-zinc-700 shrink-0" />
+          <GripVertical className="hidden md:block w-3.5 h-3.5 text-gray-300 dark:text-zinc-700 shrink-0" />
           <div className="min-w-0">
             <p className="font-semibold text-gray-900 dark:text-white text-sm truncate">{order.client}</p>
             <div className="flex items-center gap-1 mt-0.5">

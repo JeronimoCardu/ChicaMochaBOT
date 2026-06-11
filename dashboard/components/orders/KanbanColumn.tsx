@@ -23,6 +23,7 @@ interface Props {
   onDragEnd: () => void;
   onReorder: (toId: string, colIdx: number) => void;
   fullWidth?: boolean;
+  preFilteredOrders?: Pedido[];
 }
 
 export function KanbanColumn({
@@ -30,11 +31,14 @@ export function KanbanColumn({
   columnOrder, newOrderId, updatedIds,
   draggingId, draggingColIdx,
   onAction, onEditOrder, onDeleteOrder, onDragStart, onDragEnd, onReorder,
-  fullWidth,
+  fullWidth, preFilteredOrders,
 }: Props) {
   const [dragOverId, setDragOverId] = useState<string | null>(null);
 
-  const filtered = useMemo(() => orders.filter(filter), [orders, filter]);
+  // Desktop: filter internally. Mobile: receives pre-computed list via preFilteredOrders
+  // to avoid useMemo dependency on function reference (unreliable in Concurrent Mode).
+  const internalFiltered = useMemo(() => orders.filter(filter), [orders, filter]);
+  const filtered = preFilteredOrders ?? internalFiltered;
 
   const sorted = useMemo(() => {
     if (!columnOrder) return filtered;
@@ -65,10 +69,11 @@ export function KanbanColumn({
       </div>
 
       {/* Cards */}
-      <div className="flex flex-col gap-2 flex-1 overflow-y-auto min-h-[80px]">
+      <div className={cn("flex flex-col gap-2 min-h-[80px]", !fullWidth && "flex-1 overflow-y-auto")}>
         {sorted.length === 0 ? (
-          <div className="flex items-center justify-center h-20 border border-dashed border-gray-200 dark:border-[#1f1f1f] rounded-xl">
-            <p className="text-xs text-gray-300 dark:text-zinc-800">Sin pedidos</p>
+          <div className="flex flex-col items-center justify-center py-10 gap-2 border border-dashed border-gray-200 dark:border-[#1f1f1f] rounded-xl">
+            <p className="text-sm text-gray-400 dark:text-zinc-500">Sin pedidos</p>
+            <p className="text-xs text-gray-300 dark:text-zinc-700">en esta columna</p>
           </div>
         ) : (
           sorted.map((order) => {

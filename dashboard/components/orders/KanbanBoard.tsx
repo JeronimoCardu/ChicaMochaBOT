@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useOrders } from "@/hooks/useOrders";
 import { KanbanColumn } from "./KanbanColumn";
 import { Pedido, OrderState } from "@/types";
@@ -41,6 +41,14 @@ export function KanbanBoard() {
     });
   };
 
+  // Must be before any early return — Rules of Hooks.
+  // Numeric dep (mobileColIdx) avoids the function-reference comparison issue
+  // that caused useMemo inside KanbanColumn to not recompute on column switch.
+  const mobileOrders = useMemo(
+    () => orders.filter(COLUMNS[mobileColIdx].filter),
+    [orders, mobileColIdx],
+  );
+
   if (loading) {
     return (
       <div className="flex flex-col gap-3 flex-1">
@@ -80,46 +88,49 @@ export function KanbanBoard() {
   };
 
   return (
-    <div className="flex flex-col flex-1 min-h-0 gap-3">
+    <div className="flex flex-col flex-1 min-h-0 gap-2">
       {/* ── Mobile: column tab bar ── */}
-      <div className="flex gap-1 md:hidden overflow-x-auto shrink-0 pb-0.5">
+      <div className="flex md:hidden overflow-x-auto shrink-0 gap-1 pb-1">
         {COLUMNS.map((col, i) => {
           const count = orders.filter(col.filter).length;
+          const active = mobileColIdx === i;
           return (
             <button
               key={i}
               onClick={() => setMobileColIdx(i)}
               className={cn(
-                "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-colors shrink-0",
-                mobileColIdx === i
-                  ? "bg-gray-900 dark:bg-white/10 text-white dark:text-white"
-                  : "text-gray-500 dark:text-zinc-500 hover:bg-gray-100 dark:hover:bg-white/5"
+                "flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium whitespace-nowrap transition-all shrink-0 border",
+                active
+                  ? "bg-gray-900 dark:bg-white/[0.08] text-white border-gray-800 dark:border-white/10 shadow-sm"
+                  : "text-gray-500 dark:text-zinc-500 border-transparent hover:bg-gray-100 dark:hover:bg-white/[0.04] hover:text-gray-700 dark:hover:text-zinc-300"
               )}
             >
-              <div className={cn("w-1.5 h-1.5 rounded-full shrink-0", col.dotColor)} />
+              <div className={cn("w-1.5 h-1.5 rounded-full shrink-0 transition-opacity", col.dotColor, !active && "opacity-60")} />
               {col.title}
-              <span className={cn(
-                "ml-0.5 px-1.5 py-0.5 rounded-full text-[10px]",
-                mobileColIdx === i
-                  ? "bg-white/20 text-white"
-                  : "bg-gray-100 dark:bg-white/5 text-gray-400 dark:text-zinc-600"
-              )}>
-                {count}
-              </span>
+              {count > 0 && (
+                <span className={cn(
+                  "ml-0.5 min-w-[18px] h-4 px-1 rounded-full text-[10px] font-semibold flex items-center justify-center tabular-nums",
+                  active
+                    ? "bg-white/20 text-white"
+                    : "bg-gray-100 dark:bg-white/[0.06] text-gray-500 dark:text-zinc-500"
+                )}>
+                  {count}
+                </span>
+              )}
             </button>
           );
         })}
       </div>
 
-      {/* ── Mobile: single column ── */}
-      <div className="flex-1 overflow-y-auto md:hidden">
+      {/* ── Mobile: natural height — main scrolls, no flex-1/overflow needed ── */}
+      <div className="md:hidden pb-4">
         <KanbanColumn
-          key={`mobile-${mobileColIdx}`}
           colIdx={mobileColIdx}
           title={COLUMNS[mobileColIdx].title}
           dotColor={COLUMNS[mobileColIdx].dotColor}
           filter={COLUMNS[mobileColIdx].filter}
           columnOrder={columnOrders.get(mobileColIdx)}
+          preFilteredOrders={mobileOrders}
           fullWidth
           {...sharedColProps}
         />

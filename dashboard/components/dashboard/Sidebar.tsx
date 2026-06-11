@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { LayoutDashboard, MessageSquare, Package, BarChart3, Beef, Sun, Moon, ExternalLink, X } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -50,7 +51,7 @@ export function Sidebar() {
         <div className="flex items-center justify-between px-5 py-5 border-b border-gray-200 dark:border-[#1f1f1f] shrink-0">
           <div className="flex items-center gap-2.5">
             <div className="w-7 h-7 rounded-md bg-orange-500/20 flex items-center justify-center">
-              <Beef className="w-4 h-4 text-orange-400" />
+              <Image src="/logo.png" alt="Chicamocha" width={32} height={32} />
             </div>
             <span className="font-semibold text-sm text-gray-900 dark:text-white tracking-tight">
               Chicamocha
