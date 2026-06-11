@@ -1,7 +1,9 @@
-﻿export interface OrderItem {
+﻿import type { BurgerSize } from "./index";
+
+export interface OrderItem {
   product_name: string;
   quantity: number;
-  size: "doble" | "triple" | "cuádruple";
+  size: BurgerSize;
   removed_ingredients: string[];
   extra_ingredients: string[];
   notes: string;

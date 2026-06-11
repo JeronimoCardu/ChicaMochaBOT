@@ -2,28 +2,53 @@
 
 import { useState } from "react";
 import { X, Plus, Minus, Trash2 } from "lucide-react";
-import { Pedido, PedidoItem, OrderState, DeliveryType, MethodPay } from "@/types";
+import {
+  Pedido,
+  PedidoItem,
+  OrderState,
+  DeliveryType,
+  MethodPay,
+  BurgerSize,
+} from "@/types";
 import { COMBO_INGREDIENTES } from "@/lib/combo-ingredients";
 import { cn } from "@/lib/utils";
 
 const ALL_PRODUCT_NAMES = Object.keys(COMBO_INGREDIENTES).sort();
-const SIZES      = ["doble", "triple", "cuádruple"] as const;
-const JHON_SIZES = ["simple", "doble", "triple"]    as const;
+const SIZES: BurgerSize[]      = ["doble", "triple", "cuádruple"];
+const JHON_SIZES: BurgerSize[] = ["simple", "doble", "triple"];
 const ALL_INGREDIENTS = [
-  "bacon", "cheddar", "crispy", "salsa de la casa", "salsa roja",
-  "lechuga", "tomate", "cebolla", "pepinillos", "rucula",
-  "roquefort", "cebolla caramelizada", "provolone", "huevo",
+  "bacon",
+  "cheddar",
+  "crispy",
+  "salsa de la casa",
+  "salsa roja",
+  "lechuga",
+  "tomate",
+  "cebolla",
+  "pepinillos",
+  "rucula",
+  "roquefort",
+  "cebolla caramelizada",
+  "provolone",
+  "huevo",
 ];
 
 // Burgers that include cheddar as a standard ingredient
-const BURGAS_CON_CHEDDAR = new Set(["Burga 1", "Burga 2", "Burga 4", "Burga 6", "Burga 7", "Burga 8"]);
+const BURGAS_CON_CHEDDAR = new Set([
+  "Burga 1",
+  "Burga 2",
+  "Burga 4",
+  "Burga 6",
+  "Burga 7",
+  "Burga 8",
+]);
 
 const STATE_OPTIONS: { value: OrderState; label: string }[] = [
-  { value: "pending",   label: "Pendiente"  },
+  { value: "pending", label: "Pendiente" },
   { value: "preparing", label: "Preparando" },
-  { value: "ready",     label: "Listo"      },
-  { value: "delivered", label: "Entregado"  },
-  { value: "cancelled", label: "Cancelado"  },
+  { value: "ready", label: "Listo" },
+  { value: "delivered", label: "Entregado" },
+  { value: "cancelled", label: "Cancelado" },
 ];
 
 function makeItem(): PedidoItem {
@@ -44,9 +69,11 @@ function calcPreview(items: PedidoItem[]): number {
   return items.reduce((sum, item) => {
     let sizeExtra: number;
     if (item.product_name === "Jhon") {
-      sizeExtra = item.size === "doble" ? 2000 : item.size === "triple" ? 4000 : 0;
+      sizeExtra =
+        item.size === "doble" ? 2000 : item.size === "triple" ? 4000 : 0;
     } else {
-      sizeExtra = item.size === "triple" ? 2000 : item.size === "cuádruple" ? 4000 : 0;
+      sizeExtra =
+        item.size === "triple" ? 2000 : item.size === "cuádruple" ? 4000 : 0;
     }
     const extraIng = (item.extra_ingredients?.length ?? 0) * 2000;
     return sum + (12000 + sizeExtra + extraIng) * (item.quantity ?? 1);
@@ -67,7 +94,9 @@ function ItemEditor({
     ...(COMBO_INGREDIENTES[item.product_name] ?? []),
     ...(BURGAS_CON_CHEDDAR.has(item.product_name) ? ["cheddar"] : []),
   ];
-  const extraCandidates = ALL_INGREDIENTS.filter((ing) => !comboIngs.includes(ing));
+  const extraCandidates = ALL_INGREDIENTS.filter(
+    (ing) => !comboIngs.includes(ing),
+  );
 
   const toggleRemoved = (ing: string) => {
     const list = item.removed_ingredients.includes(ing)
@@ -93,22 +122,35 @@ function ItemEditor({
           value={item.product_name}
           onChange={(e) => {
             const name = e.target.value;
-            onChange({ product_name: name, removed_ingredients: [], extra_ingredients: [], size: name === "Jhon" ? "simple" : "doble" });
+            onChange({
+              product_name: name,
+              removed_ingredients: [],
+              extra_ingredients: [],
+              size: name === "Jhon" ? "simple" : "doble",
+            });
           }}
           className="flex-1 min-w-0 px-3 py-1.5 text-sm bg-white dark:bg-[#111111] border border-gray-200 dark:border-[#2a2a2a] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-orange-400/30"
         >
-          {ALL_PRODUCT_NAMES.map((n) => <option key={n} value={n}>{n}</option>)}
+          {ALL_PRODUCT_NAMES.map((n) => (
+            <option key={n} value={n}>
+              {n}
+            </option>
+          ))}
         </select>
 
         <div className="flex items-center gap-1.5">
           <button
             type="button"
-            onClick={() => onChange({ quantity: Math.max(1, item.quantity - 1) })}
+            onClick={() =>
+              onChange({ quantity: Math.max(1, item.quantity - 1) })
+            }
             className="w-6 h-6 flex items-center justify-center rounded-md bg-gray-100 dark:bg-[#222] text-gray-600 dark:text-zinc-400 hover:bg-gray-200 dark:hover:bg-[#2a2a2a]"
           >
             <Minus className="w-3 h-3" />
           </button>
-          <span className="text-sm font-medium text-gray-900 dark:text-white w-5 text-center">{item.quantity}</span>
+          <span className="text-sm font-medium text-gray-900 dark:text-white w-5 text-center">
+            {item.quantity}
+          </span>
           <button
             type="button"
             onClick={() => onChange({ quantity: item.quantity + 1 })}
@@ -120,13 +162,21 @@ function ItemEditor({
 
         <select
           value={item.size}
-          onChange={(e) => onChange({ size: e.target.value })}
+          onChange={(e) => onChange({ size: e.target.value as BurgerSize })}
           className="px-2 py-1.5 text-xs bg-white dark:bg-[#111111] border border-gray-200 dark:border-[#2a2a2a] rounded-lg text-gray-900 dark:text-white focus:outline-none capitalize"
         >
-          {sizes.map((s) => <option key={s} value={s}>{s}</option>)}
+          {sizes.map((s) => (
+            <option key={s} value={s}>
+              {s}
+            </option>
+          ))}
         </select>
 
-        <button type="button" onClick={onRemove} className="p-1.5 text-red-400 hover:text-red-500 transition-colors">
+        <button
+          type="button"
+          onClick={onRemove}
+          className="p-1.5 text-red-400 hover:text-red-500 transition-colors"
+        >
           <Trash2 className="w-3.5 h-3.5" />
         </button>
       </div>
@@ -134,7 +184,9 @@ function ItemEditor({
       {/* Quitar ingredientes */}
       {comboIngs.length > 0 && (
         <div>
-          <p className="text-xs text-gray-400 dark:text-zinc-600 mb-1.5">Quitar:</p>
+          <p className="text-xs text-gray-400 dark:text-zinc-600 mb-1.5">
+            Quitar:
+          </p>
           <div className="flex flex-wrap gap-1.5">
             {comboIngs.map((ing) => (
               <button
@@ -145,7 +197,7 @@ function ItemEditor({
                   "text-xs px-2.5 py-1 rounded-full border transition-colors",
                   item.removed_ingredients.includes(ing)
                     ? "bg-red-50 dark:bg-red-400/10 text-red-600 dark:text-red-400 border-red-200 dark:border-red-400/20"
-                    : "bg-white dark:bg-[#111111] text-gray-500 dark:text-zinc-500 border-gray-200 dark:border-[#2a2a2a] hover:border-red-200 dark:hover:border-red-400/20"
+                    : "bg-white dark:bg-[#111111] text-gray-500 dark:text-zinc-500 border-gray-200 dark:border-[#2a2a2a] hover:border-red-200 dark:hover:border-red-400/20",
                 )}
               >
                 {ing}
@@ -157,7 +209,9 @@ function ItemEditor({
 
       {/* Extras */}
       <div>
-        <p className="text-xs text-gray-400 dark:text-zinc-600 mb-1.5">Extras:</p>
+        <p className="text-xs text-gray-400 dark:text-zinc-600 mb-1.5">
+          Extras:
+        </p>
         <div className="flex flex-wrap gap-1.5">
           {extraCandidates.map((ing) => (
             <button
@@ -168,7 +222,7 @@ function ItemEditor({
                 "text-xs px-2.5 py-1 rounded-full border transition-colors",
                 item.extra_ingredients.includes(ing)
                   ? "bg-green-50 dark:bg-green-400/10 text-green-600 dark:text-green-400 border-green-200 dark:border-green-400/20"
-                  : "bg-white dark:bg-[#111111] text-gray-500 dark:text-zinc-500 border-gray-200 dark:border-[#2a2a2a] hover:border-green-200 dark:hover:border-green-400/20"
+                  : "bg-white dark:bg-[#111111] text-gray-500 dark:text-zinc-500 border-gray-200 dark:border-[#2a2a2a] hover:border-green-200 dark:hover:border-green-400/20",
               )}
             >
               +{ing}
@@ -187,21 +241,30 @@ interface Props {
 }
 
 export function EditOrderModal({ pedido, onSave, onClose }: Props) {
-  const [client, setClient]               = useState(pedido.client);
-  const [deliveryType, setDeliveryType]   = useState<DeliveryType>(pedido.delivery_type);
-  const [address, setAddress]             = useState(pedido.address ?? "");
-  const [methodPay, setMethodPay]         = useState<MethodPay>(pedido.method_pay);
-  const [state, setState]                 = useState<OrderState>(pedido.state);
-  const [requestedTime, setRequestedTime] = useState(pedido.requested_time ?? "");
-  const [items, setItems]                 = useState<PedidoItem[]>(pedido.items ?? []);
-  const [customTotal, setCustomTotal]     = useState<string>(String(pedido.total ?? calcPreview(pedido.items ?? [])));
-  const [saving, setSaving]               = useState(false);
-  const [error, setError]                 = useState<string | null>(null);
+  const [client, setClient] = useState(pedido.client);
+  const [deliveryType, setDeliveryType] = useState<DeliveryType>(
+    pedido.delivery_type,
+  );
+  const [address, setAddress] = useState(pedido.address ?? "");
+  const [methodPay, setMethodPay] = useState<MethodPay>(pedido.method_pay);
+  const [state, setState] = useState<OrderState>(pedido.state);
+  const [requestedTime, setRequestedTime] = useState(
+    pedido.requested_time ?? "",
+  );
+  const [items, setItems] = useState<PedidoItem[]>(pedido.items ?? []);
+  const [customTotal, setCustomTotal] = useState<string>(
+    String(pedido.total ?? calcPreview(pedido.items ?? [])),
+  );
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const setItem = (i: number, update: Partial<PedidoItem>) =>
-    setItems((prev) => prev.map((item, idx) => (idx === i ? { ...item, ...update } : item)));
+    setItems((prev) =>
+      prev.map((item, idx) => (idx === i ? { ...item, ...update } : item)),
+    );
 
-  const removeItem = (i: number) => setItems((prev) => prev.filter((_, idx) => idx !== i));
+  const removeItem = (i: number) =>
+    setItems((prev) => prev.filter((_, idx) => idx !== i));
 
   // Auto-update customTotal when items change (keep in sync unless user has manually overridden)
   const handleItemsChange = (i: number, update: Partial<PedidoItem>) => {
@@ -209,7 +272,10 @@ export function EditOrderModal({ pedido, onSave, onClose }: Props) {
   };
 
   const handleSave = async () => {
-    if (!client.trim()) { setError("El nombre del cliente es obligatorio"); return; }
+    if (!client.trim()) {
+      setError("El nombre del cliente es obligatorio");
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
@@ -255,7 +321,9 @@ export function EditOrderModal({ pedido, onSave, onClose }: Props) {
       >
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 dark:border-[#1f1f1f]">
-          <h2 className="text-base font-semibold text-gray-900 dark:text-white">Editar pedido</h2>
+          <h2 className="text-base font-semibold text-gray-900 dark:text-white">
+            Editar pedido
+          </h2>
           <button
             onClick={onClose}
             className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-white/5 text-gray-400 dark:text-zinc-500 transition-colors"
@@ -266,18 +334,27 @@ export function EditOrderModal({ pedido, onSave, onClose }: Props) {
 
         <div className="p-6 space-y-5">
           <Field label="Cliente">
-            <input value={client} onChange={(e) => setClient(e.target.value)} className={inputCls} />
+            <input
+              value={client}
+              onChange={(e) => setClient(e.target.value)}
+              className={inputCls}
+            />
           </Field>
 
           <Field label="Tipo de entrega">
             <div className="flex gap-2">
               {(["delivery", "pickup"] as DeliveryType[]).map((t) => (
-                <button key={t} type="button" onClick={() => setDeliveryType(t)}
-                  className={cn("px-4 py-2 rounded-lg text-sm font-medium transition-colors border",
+                <button
+                  key={t}
+                  type="button"
+                  onClick={() => setDeliveryType(t)}
+                  className={cn(
+                    "px-4 py-2 rounded-lg text-sm font-medium transition-colors border",
                     deliveryType === t
                       ? "bg-orange-50 dark:bg-orange-400/10 text-orange-600 dark:text-orange-400 border-orange-200 dark:border-orange-400/20"
-                      : "bg-gray-50 dark:bg-[#1a1a1a] text-gray-600 dark:text-zinc-400 border-gray-200 dark:border-[#2a2a2a]"
-                  )}>
+                      : "bg-gray-50 dark:bg-[#1a1a1a] text-gray-600 dark:text-zinc-400 border-gray-200 dark:border-[#2a2a2a]",
+                  )}
+                >
                   {t === "delivery" ? "Delivery" : "Retiro en local"}
                 </button>
               ))}
@@ -286,41 +363,71 @@ export function EditOrderModal({ pedido, onSave, onClose }: Props) {
 
           {deliveryType === "delivery" && (
             <Field label="Dirección">
-              <input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Calle y número" className={inputCls} />
+              <input
+                value={address}
+                onChange={(e) => setAddress(e.target.value)}
+                placeholder="Calle y número"
+                className={inputCls}
+              />
             </Field>
           )}
 
           <Field label="Método de pago">
             <div className="flex gap-2 flex-wrap">
               {(["cash", "transfer", "mp"] as MethodPay[]).map((m) => (
-                <button key={m} type="button" onClick={() => setMethodPay(m)}
-                  className={cn("px-4 py-2 rounded-lg text-sm font-medium transition-colors border",
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => setMethodPay(m)}
+                  className={cn(
+                    "px-4 py-2 rounded-lg text-sm font-medium transition-colors border",
                     methodPay === m
                       ? "bg-blue-50 dark:bg-blue-400/10 text-blue-600 dark:text-blue-400 border-blue-200 dark:border-blue-400/20"
-                      : "bg-gray-50 dark:bg-[#1a1a1a] text-gray-600 dark:text-zinc-400 border-gray-200 dark:border-[#2a2a2a]"
-                  )}>
-                  {m === "cash" ? "Efectivo" : m === "transfer" ? "Transferencia" : "Mercado Pago"}
+                      : "bg-gray-50 dark:bg-[#1a1a1a] text-gray-600 dark:text-zinc-400 border-gray-200 dark:border-[#2a2a2a]",
+                  )}
+                >
+                  {m === "cash"
+                    ? "Efectivo"
+                    : m === "transfer"
+                      ? "Transferencia"
+                      : "Mercado Pago"}
                 </button>
               ))}
             </div>
           </Field>
 
           <Field label="Estado">
-            <select value={state} onChange={(e) => setState(e.target.value as OrderState)} className={inputCls}>
-              {STATE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+            <select
+              value={state}
+              onChange={(e) => setState(e.target.value as OrderState)}
+              className={inputCls}
+            >
+              {STATE_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
             </select>
           </Field>
 
           <Field label="Horario solicitado (opcional)">
-            <input value={requestedTime} onChange={(e) => setRequestedTime(e.target.value)} placeholder="ej: 21:30" className={inputCls} />
+            <input
+              value={requestedTime}
+              onChange={(e) => setRequestedTime(e.target.value)}
+              placeholder="ej: 21:30"
+              className={inputCls}
+            />
           </Field>
 
           {/* Productos */}
           <div>
             <div className="flex items-center justify-between mb-2">
               <label className={labelCls}>Productos</label>
-              <button type="button" onClick={() => setItems((prev) => [...prev, makeItem()])}
-                className="flex items-center gap-1 text-xs text-orange-600 dark:text-orange-400 hover:text-orange-700 dark:hover:text-orange-300 font-medium transition-colors">
+              <button
+                type="button"
+                onClick={() => setItems((prev) => [...prev, makeItem()])}
+                className="flex items-center gap-1 text-xs text-orange-600 dark:text-orange-400 hover:text-orange-700 dark:hover:text-orange-300 font-medium transition-colors"
+              >
                 <Plus className="w-3.5 h-3.5" /> Agregar ítem
               </button>
             </div>
@@ -331,7 +438,9 @@ export function EditOrderModal({ pedido, onSave, onClose }: Props) {
                 </p>
               )}
               {items.map((item, i) => (
-                <ItemEditor key={i} item={item}
+                <ItemEditor
+                  key={i}
+                  item={item}
                   onChange={(update) => handleItemsChange(i, update)}
                   onRemove={() => removeItem(i)}
                 />
@@ -339,7 +448,9 @@ export function EditOrderModal({ pedido, onSave, onClose }: Props) {
             </div>
           </div>
 
-          {error && <p className="text-xs text-red-500 dark:text-red-400">{error}</p>}
+          {error && (
+            <p className="text-xs text-red-500 dark:text-red-400">{error}</p>
+          )}
         </div>
 
         {/* Footer */}
@@ -365,11 +476,17 @@ export function EditOrderModal({ pedido, onSave, onClose }: Props) {
             )}
           </div>
           <div className="flex gap-2">
-            <button onClick={onClose} className="px-4 py-2 text-sm text-gray-600 dark:text-zinc-400 hover:text-gray-900 dark:hover:text-white transition-colors">
+            <button
+              onClick={onClose}
+              className="px-4 py-2 text-sm text-gray-600 dark:text-zinc-400 hover:text-gray-900 dark:hover:text-white transition-colors"
+            >
               Cancelar
             </button>
-            <button onClick={handleSave} disabled={saving}
-              className="px-5 py-2 text-sm font-medium bg-orange-500 hover:bg-orange-600 disabled:opacity-50 text-white rounded-lg transition-colors">
+            <button
+              onClick={handleSave}
+              disabled={saving}
+              className="px-5 py-2 text-sm font-medium bg-orange-500 hover:bg-orange-600 disabled:opacity-50 text-white rounded-lg transition-colors"
+            >
               {saving ? "Guardando…" : "Guardar cambios"}
             </button>
           </div>
@@ -379,7 +496,13 @@ export function EditOrderModal({ pedido, onSave, onClose }: Props) {
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
   return (
     <div>
       <label className={labelCls}>{label}</label>
@@ -388,5 +511,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
-const labelCls = "text-xs font-medium text-gray-500 dark:text-zinc-500 uppercase tracking-wider mb-1.5 block";
-const inputCls = "w-full px-3 py-2 text-sm bg-gray-50 dark:bg-[#1a1a1a] border border-gray-200 dark:border-[#2a2a2a] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-orange-400/30";
+const labelCls =
+  "text-xs font-medium text-gray-500 dark:text-zinc-500 uppercase tracking-wider mb-1.5 block";
+const inputCls =
+  "w-full px-3 py-2 text-sm bg-gray-50 dark:bg-[#1a1a1a] border border-gray-200 dark:border-[#2a2a2a] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-orange-400/30";

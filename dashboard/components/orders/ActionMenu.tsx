@@ -96,7 +96,7 @@ export function ActionMenu({ orderId: _orderId, cell, onEdit, onDelete }: Props)
                 onClick={(e) => {
                   e.stopPropagation();
                   close();
-                  router.push(`/dashboard/conversations/${encodeURIComponent(cell)}`);
+                  router.push(`/conversations/${encodeURIComponent(cell)}`);
                 }}
                 className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-sm text-gray-700 dark:text-zinc-300 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
               >

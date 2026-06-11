@@ -7,10 +7,10 @@ import { cn } from "@/lib/utils";
 import { useTheme } from "@/components/providers/ThemeProvider";
 
 const NAV = [
-  { href: "/dashboard",               label: "Pedidos",        icon: LayoutDashboard },
-  { href: "/dashboard/stock",         label: "Stock",          icon: Package         },
-  { href: "/dashboard/conversations", label: "Conversaciones", icon: MessageSquare   },
-  { href: "/dashboard/analytics",     label: "Métricas",       icon: BarChart3       },
+  { href: "/",               label: "Pedidos",        icon: LayoutDashboard },
+  { href: "/stock",          label: "Stock",          icon: Package         },
+  { href: "/conversations",  label: "Conversaciones", icon: MessageSquare   },
+  { href: "/analytics",      label: "Métricas",       icon: BarChart3       },
 ];
 
 const WA_LINK = "https://wa.me/542325471890";
@@ -35,7 +35,7 @@ export function Sidebar() {
       {/* Nav */}
       <nav className="flex-1 px-2 py-3 space-y-0.5">
         {NAV.map(({ href, label, icon: Icon }) => {
-          const active = href === "/dashboard" ? pathname === href : pathname.startsWith(href);
+          const active = href === "/" ? pathname === "/" : pathname.startsWith(href);
           return (
             <Link
               key={href}

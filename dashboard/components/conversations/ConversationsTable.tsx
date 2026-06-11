@@ -94,7 +94,7 @@ export function ConversationsTable() {
                     </button>
                   )}
                   <Link
-                    href={`/dashboard/conversations/${conv.phone}`}
+                    href={`/conversations/${conv.phone}`}
                     className="text-xs px-4 py-1.5 rounded-lg bg-gray-100 dark:bg-white/5 text-gray-600 dark:text-zinc-300 hover:bg-gray-200 dark:hover:bg-white/10 transition-colors"
                   >
                     Ver

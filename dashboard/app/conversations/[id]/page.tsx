@@ -18,7 +18,7 @@ export default function ConversationPage() {
       {/* Header */}
       <div className="flex items-center gap-3 px-5 py-4 border-b border-gray-100 dark:border-[#1f1f1f] shrink-0 bg-white dark:bg-transparent">
         <Link
-          href="/dashboard/conversations"
+          href="/conversations"
           className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-white/5 text-gray-400 dark:text-zinc-500 hover:text-gray-700 dark:hover:text-zinc-300 transition-colors"
         >
           <ArrowLeft className="w-4 h-4" />

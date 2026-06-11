@@ -2,13 +2,13 @@
 
 import { useState } from "react";
 import { X, Plus, Minus, Trash2 } from "lucide-react";
-import { Pedido, PedidoItem, DeliveryType, MethodPay } from "@/types";
+import { Pedido, PedidoItem, DeliveryType, MethodPay, BurgerSize } from "@/types";
 import { COMBO_INGREDIENTES } from "@/lib/combo-ingredients";
 import { cn } from "@/lib/utils";
 
 const ALL_PRODUCT_NAMES = Object.keys(COMBO_INGREDIENTES).sort();
-const SIZES      = ["doble", "triple", "cuádruple"] as const;
-const JHON_SIZES = ["simple", "doble", "triple"]    as const;
+const SIZES: BurgerSize[]      = ["doble", "triple", "cuádruple"];
+const JHON_SIZES: BurgerSize[] = ["simple", "doble", "triple"];
 const ALL_INGREDIENTS = [
   "bacon", "cheddar", "crispy", "salsa de la casa", "salsa roja",
   "lechuga", "tomate", "cebolla", "pepinillos", "rucula",
@@ -102,7 +102,7 @@ function ItemEditor({
           </button>
         </div>
 
-        <select value={item.size} onChange={(e) => onChange({ size: e.target.value })}
+        <select value={item.size} onChange={(e) => onChange({ size: e.target.value as BurgerSize })}
           className="px-2 py-1.5 text-xs bg-white dark:bg-[#111111] border border-gray-200 dark:border-[#2a2a2a] rounded-lg text-gray-900 dark:text-white focus:outline-none capitalize">
           {sizes.map((s) => <option key={s} value={s}>{s}</option>)}
         </select>

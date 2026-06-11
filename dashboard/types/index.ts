@@ -1,3 +1,5 @@
+export type BurgerSize = "simple" | "doble" | "triple" | "cuádruple";
+
 export type DeliveryType = "delivery" | "pickup";
 export type MethodPay = "cash" | "transfer" | "mp";
 export type OrderState =
@@ -13,7 +15,7 @@ export type MessageRole = "user" | "assistant";
 export interface PedidoItem {
   product_name: string;
   quantity: number;
-  size: "doble" | "triple" | "cuádruple";
+  size: BurgerSize;
   removed_ingredients: string[];
   extra_ingredients: string[];
   base_price: number;
