@@ -74,13 +74,20 @@ export function useConversations() {
   }, [fetchAll]);
 
   const takeOver = async (phone: string): Promise<boolean> => {
-    const { error } = await supabase.from("handoffs").insert({ cell: phone });
-    if (!error) {
+    try {
+      const res = await fetch("/api/handoffs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cell: phone }),
+      });
+      if (!res.ok) return false;
       setConversations((prev) =>
         prev.map((c) => (c.phone === phone ? { ...c, inHandoff: true } : c))
       );
+      return true;
+    } catch {
+      return false;
     }
-    return !error;
   };
 
   return { conversations, loading, takeOver, refresh: fetchAll };

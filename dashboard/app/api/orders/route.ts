@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@/lib/supabase-server";
 
-const SIZE_EXTRA: Record<string, number>      = { doble: 0, triple: 2000, "cuádruple": 4000 };
+const SIZE_EXTRA: Record<string, number> = { doble: 0, triple: 2000, "cuádruple": 4000 };
 const JHON_SIZE_EXTRA: Record<string, number> = { simple: 0, doble: 2000, triple: 4000 };
 const INGREDIENT_PRICE = 2000;
+
+const VALID_DELIVERY = ["delivery", "pickup"] as const;
+const VALID_PAY      = ["cash", "transfer", "mp"] as const;
 
 async function enrichItems(
   items: { product_name: string; quantity?: number; size?: string; extra_ingredients?: string[]; removed_ingredients?: string[]; notes?: string }[],
@@ -14,7 +17,7 @@ async function enrichItems(
   const priceMap = Object.fromEntries((combos ?? []).map((c: { name: string; price: number }) => [c.name, Number(c.price)]));
   return items.map((item) => {
     const basePrice = priceMap[item.product_name] ?? 12000;
-    const sizeMap   = item.product_name === "Jhon" ? JHON_SIZE_EXTRA : SIZE_EXTRA;
+    const sizeMap = item.product_name === "Jhon" ? JHON_SIZE_EXTRA : SIZE_EXTRA;
     const sizeExtra = sizeMap[item.size ?? (item.product_name === "Jhon" ? "simple" : "doble")] ?? 0;
     const ingredientExtra = (item.extra_ingredients?.length ?? 0) * INGREDIENT_PRICE;
     const extraPrice = sizeExtra + ingredientExtra;
@@ -39,6 +42,21 @@ export async function POST(req: NextRequest) {
 
   if (!cell || !client || !delivery_type || !method_pay) {
     return NextResponse.json({ error: "Campos obligatorios faltantes" }, { status: 400 });
+  }
+  if (!VALID_DELIVERY.includes(delivery_type)) {
+    return NextResponse.json({ error: "delivery_type inválido" }, { status: 400 });
+  }
+  if (!VALID_PAY.includes(method_pay)) {
+    return NextResponse.json({ error: "method_pay inválido" }, { status: 400 });
+  }
+  if (!Array.isArray(items) || items.length > 20) {
+    return NextResponse.json({ error: "items inválido" }, { status: 400 });
+  }
+  if (typeof cell !== "string" || cell.length > 20) {
+    return NextResponse.json({ error: "cell inválido" }, { status: 400 });
+  }
+  if (typeof client !== "string" || client.length > 100) {
+    return NextResponse.json({ error: "client inválido" }, { status: 400 });
   }
 
   const enrichedItems = await enrichItems(items, supabase);

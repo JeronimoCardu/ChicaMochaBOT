@@ -121,20 +121,24 @@ export function useOrders() {
     locallyActed.current.add(id);
     setTimeout(() => locallyActed.current.delete(id), 4000);
 
-    const extra: Partial<Pedido> = {};
-    if (state === "delivered") extra.delivered_at = new Date().toISOString();
-    if (state === "confirmed") extra.confirmed_at = new Date().toISOString();
+    try {
+      const res = await fetch(`/api/orders/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ state }),
+      });
+      if (!res.ok) return false;
 
-    const { error } = await supabase
-      .from("pedidos")
-      .update({ state, updated_at: new Date().toISOString(), ...extra })
-      .eq("id", id);
+      const extra: Partial<Pedido> = {};
+      if (state === "delivered") extra.delivered_at = new Date().toISOString();
+      if (state === "confirmed") extra.confirmed_at = new Date().toISOString();
 
-    if (!error) {
       setOrders((prev) => prev.map((o) => (o.id === id ? { ...o, state, ...extra } : o)));
       setUpdatedIds((prev) => { const s = new Set(prev); s.delete(id); return s; });
+      return true;
+    } catch {
+      return false;
     }
-    return !error;
   };
 
   const cancelOrder = useCallback(async (id: string) => {

@@ -5,6 +5,10 @@ const SIZE_EXTRA: Record<string, number>      = { doble: 0, triple: 2000, "cuád
 const JHON_SIZE_EXTRA: Record<string, number> = { simple: 0, doble: 2000, triple: 4000 };
 const INGREDIENT_PRICE = 2000;
 
+const VALID_DELIVERY = ["delivery", "pickup"] as const;
+const VALID_PAY      = ["cash", "transfer", "mp"] as const;
+const VALID_STATES   = ["pending", "confirmed", "preparing", "ready", "sent", "delivered", "cancelled"] as const;
+
 async function enrichItems(
   items: { product_name: string; quantity?: number; size?: string; extra_ingredients?: string[]; removed_ingredients?: string[]; notes?: string }[],
   supabase: ReturnType<typeof createServerClient>
@@ -43,6 +47,39 @@ export async function GET(
   return NextResponse.json({ pedido: data });
 }
 
+export async function PATCH(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id } = await params;
+  const supabase = createServerClient();
+
+  let body: Record<string, unknown>;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "JSON inválido" }, { status: 400 });
+  }
+
+  const { state } = body;
+
+  if (!state || !VALID_STATES.includes(state as (typeof VALID_STATES)[number])) {
+    return NextResponse.json({ error: "Estado inválido" }, { status: 400 });
+  }
+
+  const extra: Record<string, string> = {};
+  if (state === "delivered") extra.delivered_at = new Date().toISOString();
+  if (state === "confirmed") extra.confirmed_at = new Date().toISOString();
+
+  const { error } = await supabase
+    .from("pedidos")
+    .update({ state, updated_at: new Date().toISOString(), ...extra })
+    .eq("id", id);
+
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  return NextResponse.json({ success: true });
+}
+
 export async function PUT(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -50,6 +87,19 @@ export async function PUT(
   const { id } = await params;
   const supabase = createServerClient();
   const body = await req.json();
+
+  if ("delivery_type" in body && !VALID_DELIVERY.includes(body.delivery_type)) {
+    return NextResponse.json({ error: "delivery_type inválido" }, { status: 400 });
+  }
+  if ("method_pay" in body && !VALID_PAY.includes(body.method_pay)) {
+    return NextResponse.json({ error: "method_pay inválido" }, { status: 400 });
+  }
+  if ("state" in body && !VALID_STATES.includes(body.state)) {
+    return NextResponse.json({ error: "state inválido" }, { status: 400 });
+  }
+  if ("items" in body && (!Array.isArray(body.items) || body.items.length > 20)) {
+    return NextResponse.json({ error: "items inválido" }, { status: 400 });
+  }
 
   const updatePayload: Record<string, unknown> = {
     updated_at: new Date().toISOString(),

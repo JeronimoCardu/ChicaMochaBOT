@@ -33,13 +33,20 @@ export function useConfig() {
 
   const updateValue = async (key: keyof ConfigValues, value: number): Promise<boolean> => {
     setSaving(key);
-    const { error } = await supabase
-      .from("config")
-      .update({ value: String(value) })
-      .eq("key", key);
-    if (!error) setConfig((prev) => ({ ...prev, [key]: value }));
-    setSaving(null);
-    return !error;
+    try {
+      const res = await fetch("/api/config", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ key, value }),
+      });
+      if (!res.ok) { setSaving(null); return false; }
+      setConfig((prev) => ({ ...prev, [key]: value }));
+      setSaving(null);
+      return true;
+    } catch {
+      setSaving(null);
+      return false;
+    }
   };
 
   return { config, loading, saving, updateValue };

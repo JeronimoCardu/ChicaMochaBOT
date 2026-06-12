@@ -29,30 +29,40 @@ export function useIngredients() {
   // El bloqueo por ingredientes es 100% dinámico (derivado).
   const toggleIngrediente = async (id: string, available: boolean): Promise<boolean> => {
     setSavingIng(id);
-    const { error } = await supabase
-      .from("ingredientes")
-      .update({ available })
-      .eq("id", id);
-
-    if (error) { setSavingIng(null); return false; }
-    setIngredientes((prev) => prev.map((i) => (i.id === id ? { ...i, available } : i)));
-    setSavingIng(null);
-    return true;
+    try {
+      const res = await fetch(`/api/ingredientes/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ available }),
+      });
+      if (!res.ok) { setSavingIng(null); return false; }
+      setIngredientes((prev) => prev.map((i) => (i.id === id ? { ...i, available } : i)));
+      setSavingIng(null);
+      return true;
+    } catch {
+      setSavingIng(null);
+      return false;
+    }
   };
 
   // Combo toggle manual — escribe en combo.available (override del operador).
   // No afecta a ingredientes.
   const toggleCombo = async (name: string, available: boolean): Promise<boolean> => {
     setSavingCombo(name);
-    const { error } = await supabase
-      .from("combos")
-      .update({ available })
-      .eq("name", name);
-
-    if (error) { setSavingCombo(null); return false; }
-    setCombos((prev) => prev.map((c) => (c.name === name ? { ...c, available } : c)));
-    setSavingCombo(null);
-    return true;
+    try {
+      const res = await fetch(`/api/combos/${encodeURIComponent(name)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ available }),
+      });
+      if (!res.ok) { setSavingCombo(null); return false; }
+      setCombos((prev) => prev.map((c) => (c.name === name ? { ...c, available } : c)));
+      setSavingCombo(null);
+      return true;
+    } catch {
+      setSavingCombo(null);
+      return false;
+    }
   };
 
   // derivedCombos: estado efectivo = manual AND no-bloqueado-por-ingrediente
