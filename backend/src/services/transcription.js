@@ -16,7 +16,8 @@ async function getWhatsAppMediaUrl(mediaId) {
   return res.data.url;
 }
 
-async function downloadAudio(url) {
+export async function downloadWhatsAppMedia(mediaId) {
+  const url = await getWhatsAppMediaUrl(mediaId);
   const res = await axios.get(url, {
     responseType: "arraybuffer",
     headers: { Authorization: `Bearer ${process.env.WHATSAPP_TOKEN}` },
@@ -24,18 +25,21 @@ async function downloadAudio(url) {
   return Buffer.from(res.data);
 }
 
-export async function transcribeAudio(mediaId, mimeType = "audio/ogg") {
-  console.log(`🎤 Transcribiendo audio: ${mediaId}`);
-  const url = await getWhatsAppMediaUrl(mediaId);
-  const buffer = await downloadAudio(url);
-  const ext = mimeType.includes("mp4") ? "mp4" : "ogg";
+export async function transcribeBuffer(buffer, mimeType = "audio/ogg") {
+  const ext  = mimeType.includes("mp4") ? "mp4" : "ogg";
   const file = await toFile(buffer, `audio.${ext}`, { type: mimeType });
   const result = await groq.audio.transcriptions.create({
     file,
     model: "whisper-large-v3-turbo",
     language: "es",
   });
-  const text = result.text?.trim();
+  return result.text?.trim();
+}
+
+export async function transcribeAudio(mediaId, mimeType = "audio/ogg") {
+  console.log(`🎤 Transcribiendo audio: ${mediaId}`);
+  const buffer = await downloadWhatsAppMedia(mediaId);
+  const text   = await transcribeBuffer(buffer, mimeType);
   console.log(`📝 Transcripción: ${text}`);
   return text;
 }

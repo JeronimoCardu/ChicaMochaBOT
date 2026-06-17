@@ -1,8 +1,9 @@
 import express from "express";
 import { askAI } from "../ai/openrouter.js";
 import { sendWhatsAppMessage } from "../services/whatsapp.js";
-import { transcribeAudio } from "../services/transcription.js";
-import { getHistory, saveMessage } from "../db/messages.js";
+import { transcribeAudio, downloadWhatsAppMedia, transcribeBuffer } from "../services/transcription.js";
+import { getHistory, saveMessage, isLikelyReceipt } from "../db/messages.js";
+import { uploadMedia } from "../lib/storage.js";
 import { getMenuContext, getComboAvailability } from "../db/combos.js";
 import { upsertPedido, getActivePedido, getCancelablePedidos, cancelPedido } from "../db/pedidos.js";
 import { getConfig } from "../db/config.js";
@@ -72,7 +73,91 @@ router.post("/", async (req, res) => {
 
   // Skip if phone is in handoff mode (24h)
   if (await isInHandoff(from)) {
-    console.log(`🤝 ${from} en handoff — sin respuesta automática`);
+    console.log(`🤝 ${from} en handoff — tipo: ${message.type}`);
+
+    // ── Audio: transcribir + guardar en Storage ──────────────────────────────
+    if (message.type === "audio") {
+      const mediaId  = message.audio?.id;
+      const mimeType = message.audio?.mime_type || "audio/ogg";
+      let mediaUrl = null, transcription = null;
+
+      try {
+        const buffer = await downloadWhatsAppMedia(mediaId);
+
+        try {
+          mediaUrl = await uploadMedia(buffer, from, mediaId, mimeType);
+        } catch (e) {
+          console.error("❌ [handoff] Error al subir audio a Storage:", e.message);
+        }
+
+        try {
+          transcription = await transcribeBuffer(buffer, mimeType);
+        } catch (e) {
+          console.error("❌ [handoff] Error al transcribir audio:", e.message);
+        }
+      } catch (e) {
+        console.error("❌ [handoff] Error al descargar audio de Meta:", e.message);
+      }
+
+      const content = transcription ? `🎤 ${transcription}` : "🎤 [audio no transcribible]";
+      console.log(`🎤 [handoff] Audio procesado — storage: ${mediaUrl ? "✅" : "❌"} | transcripción: ${transcription ? "✅" : "❌"}`);
+      saveMessage(from, "user", content, { mediaUrl, mediaType: "audio" })
+        .catch((e) => console.error("❌ [handoff] Error al guardar audio:", e.message));
+      return;
+    }
+
+    // ── Imagen: descargar + guardar en Storage + detectar comprobante ─────────
+    if (message.type === "image") {
+      const mediaId  = message.image?.id;
+      const mimeType = message.image?.mime_type || "image/jpeg";
+      let mediaUrl = null;
+
+      try {
+        const buffer = await downloadWhatsAppMedia(mediaId);
+        try {
+          mediaUrl = await uploadMedia(buffer, from, mediaId, mimeType);
+        } catch (e) {
+          console.error("❌ [handoff] Error al subir imagen a Storage:", e.message);
+        }
+      } catch (e) {
+        console.error("❌ [handoff] Error al descargar imagen de Meta:", e.message);
+      }
+
+      const receipt = await isLikelyReceipt(from).catch(() => false);
+      if (receipt) console.log(`💳 [handoff] Posible comprobante de ${from}`);
+
+      const caption = message.image?.caption || "📷 [imagen]";
+      saveMessage(from, "user", caption, { mediaUrl, mediaType: "image", isReceipt: receipt })
+        .catch((e) => console.error("❌ [handoff] Error al guardar imagen:", e.message));
+      return;
+    }
+
+    // ── Resto de tipos ────────────────────────────────────────────────────────
+    let handoffContent = null;
+
+    if (message.type === "text" && message.text?.body) {
+      handoffContent = message.text.body;
+    } else if (message.type === "video") {
+      handoffContent = "🎥 [video]";
+    } else if (message.type === "document") {
+      const fname = message.document?.filename;
+      handoffContent = fname ? `📄 [documento: ${fname}]` : "📄 [documento]";
+    } else if (message.type === "sticker") {
+      handoffContent = "🎯 [sticker]";
+    } else if (message.type === "location") {
+      handoffContent = "📍 [ubicación compartida]";
+    } else if (message.type === "contacts") {
+      handoffContent = "👤 [contacto compartido]";
+    } else if (message.type === "reaction") {
+      return;
+    } else {
+      handoffContent = `[${message.type}]`;
+    }
+
+    if (handoffContent) {
+      saveMessage(from, "user", handoffContent)
+        .catch((e) => console.error("❌ [handoff] Error al guardar mensaje:", e.message));
+    }
     return;
   }
 

@@ -1,65 +1,126 @@
 "use client";
 
-import { useParams } from "next/navigation";
-import { ChatView } from "@/components/conversations/ChatView";
-import { useConversations } from "@/hooks/useConversations";
-import { formatPhone } from "@/lib/utils";
-import { ArrowLeft, UserCheck, Bot } from "lucide-react";
-import Link from "next/link";
+import { useEffect, useState } from "react";
+import { useParams, useRouter } from "next/navigation";
+import { Pencil } from "lucide-react";
+import { useHumanConversations } from "@/hooks/useHumanConversations";
+import { ConvSidebar }   from "@/components/conversations/ConvSidebar";
+import { ConvChat }      from "@/components/conversations/ConvChat";
+import { ConvInfoPanel } from "@/components/conversations/ConvInfoPanel";
 
 export default function ConversationPage() {
-  const params  = useParams();
-  const phone   = decodeURIComponent(params.id as string);
-  const { conversations, takeOver } = useConversations();
-  const conv    = conversations.find((c) => c.phone === phone);
+  const params = useParams();
+  const router = useRouter();
+  const phone  = decodeURIComponent(params.id as string);
+
+  const [operatorName,    setOperatorName]    = useState("Operador");
+  const [showInfoMobile,  setShowInfoMobile]  = useState(false);
+
+  const {
+    conversations,
+    loading,
+    humanRequestedCount,
+    newPhone,
+    updatedPhones,
+    clearUpdated,
+    refresh,
+  } = useHumanConversations();
+
+  useEffect(() => {
+    const saved = localStorage.getItem("op_name");
+    if (saved) setOperatorName(saved);
+    clearUpdated(phone);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phone]);
+
+  function changeOperatorName() {
+    const name = window.prompt("Tu nombre de operador:", operatorName);
+    if (name?.trim()) {
+      const trimmed = name.trim();
+      setOperatorName(trimmed);
+      localStorage.setItem("op_name", trimmed);
+    }
+  }
+
+  function handleSidebarSelect(selected: string) {
+    clearUpdated(selected);
+    router.push("/conversations/" + encodeURIComponent(selected));
+  }
+
+  const conversation = conversations.find((c) => c.phone === phone) ?? null;
 
   return (
-    <div className="flex flex-col h-full">
-      {/* Header */}
-      <div className="flex items-center gap-2 md:gap-3 px-4 md:px-5 py-3 md:py-4 border-b border-gray-100 dark:border-[#1f1f1f] shrink-0 bg-white dark:bg-transparent">
-        <Link
-          href="/conversations"
-          className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-white/5 text-gray-400 dark:text-zinc-500 hover:text-gray-700 dark:hover:text-zinc-300 transition-colors shrink-0"
-        >
-          <ArrowLeft className="w-4 h-4" />
-        </Link>
-        <div className="flex-1 min-w-0">
-          <p className="font-medium text-gray-900 dark:text-white text-sm truncate">{formatPhone(phone)}</p>
-          {conv?.activePedido && (
-            <p className="text-xs text-gray-400 dark:text-zinc-500 mt-0.5">
-              Pedido activo · {conv.activePedido.state}
-            </p>
-          )}
+    <div className="h-full overflow-hidden flex">
+
+      {/* ── Col 1: Sidebar (hidden on mobile) ── */}
+      <div className="hidden md:flex md:w-72 lg:w-72 h-full shrink-0 flex-col">
+        <div className="flex items-center justify-between px-4 py-2 bg-zinc-900/80 border-b border-zinc-800 shrink-0">
+          <span className="text-xs text-zinc-600">Operador:</span>
+          <button
+            onClick={changeOperatorName}
+            className="flex items-center gap-1 text-xs text-zinc-300 hover:text-white transition-colors"
+          >
+            <span className="font-medium">{operatorName}</span>
+            <Pencil className="w-3 h-3" />
+          </button>
         </div>
-        <div className="flex items-center gap-1.5 md:gap-2 shrink-0">
-          {/* Status badge — icon only on mobile */}
-          {conv?.inHandoff ? (
-            <span className="flex items-center gap-1.5 text-xs bg-purple-50 dark:bg-purple-400/10 text-purple-600 dark:text-purple-400 px-2 md:px-3 py-1.5 rounded-lg border border-purple-200 dark:border-purple-400/20">
-              <UserCheck className="w-3.5 h-3.5 shrink-0" />
-              <span className="hidden sm:inline">Control humano activo</span>
-            </span>
-          ) : (
-            <span className="flex items-center gap-1.5 text-xs bg-blue-50 dark:bg-blue-400/10 text-blue-600 dark:text-blue-400 px-2 md:px-3 py-1.5 rounded-lg border border-blue-200 dark:border-blue-400/20">
-              <Bot className="w-3.5 h-3.5 shrink-0" />
-              <span className="hidden sm:inline">IA activa</span>
-            </span>
-          )}
-          {!conv?.inHandoff && (
-            <button
-              onClick={() => takeOver(phone)}
-              className="flex items-center gap-1.5 text-xs px-2 md:px-3 py-1.5 rounded-lg bg-purple-50 dark:bg-purple-400/10 text-purple-600 dark:text-purple-400 hover:bg-purple-100 dark:hover:bg-purple-400/20 transition-colors border border-purple-200 dark:border-purple-400/20 font-medium"
-            >
-              <UserCheck className="w-3.5 h-3.5 shrink-0" />
-              <span className="hidden sm:inline">Tomar conversación</span>
-            </button>
-          )}
+        <div className="flex-1 overflow-hidden">
+          <ConvSidebar
+            conversations={conversations}
+            loading={loading}
+            humanRequestedCount={humanRequestedCount}
+            selectedPhone={phone}
+            onSelect={handleSidebarSelect}
+            newPhone={newPhone}
+            updatedPhones={updatedPhones}
+            onClearUpdated={clearUpdated}
+          />
         </div>
       </div>
 
-      {/* Chat */}
-      <div className="flex-1 flex flex-col overflow-hidden bg-gray-50 dark:bg-transparent">
-        <ChatView phone={phone} />
+      {/* ── Col 2: Chat ── */}
+      <div className="flex-1 h-full flex flex-col min-w-0">
+        {conversation ? (
+          <ConvChat
+            conversation={conversation}
+            operatorName={operatorName}
+            onBack={() => router.push("/conversations")}
+            onStatusChange={refresh}
+            onToggleInfo={() => setShowInfoMobile(true)}
+          />
+        ) : loading ? (
+          <div className="flex-1 flex items-center justify-center bg-[#0b141a]">
+            <div className="w-6 h-6 border-2 border-zinc-600 border-t-green-500 rounded-full animate-spin" />
+          </div>
+        ) : (
+          <div className="flex-1 flex items-center justify-center bg-[#0b141a] text-zinc-600 text-sm">
+            Conversación no encontrada
+          </div>
+        )}
       </div>
+
+      {/* ── Col 3: Info panel (desktop) ── */}
+      {conversation && (
+        <div className="hidden lg:flex lg:w-80 xl:w-96 h-full shrink-0">
+          <ConvInfoPanel
+            conversation={conversation}
+            operatorName={operatorName}
+            onStatusChange={refresh}
+          />
+        </div>
+      )}
+
+      {/* ── Mobile info overlay ── */}
+      {showInfoMobile && conversation && (
+        <div className="fixed inset-0 z-50 bg-zinc-950 overflow-y-auto lg:hidden">
+          <ConvInfoPanel
+            conversation={conversation}
+            operatorName={operatorName}
+            onStatusChange={() => { refresh(); setShowInfoMobile(false); }}
+            onClose={() => setShowInfoMobile(false)}
+          />
+        </div>
+      )}
     </div>
   );
 }

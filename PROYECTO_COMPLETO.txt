@@ -1,0 +1,1087 @@
+================================================================================
+1. ESTRUCTURA GENERAL
+================================================================================
+
+1.1 OBJETIVO DEL PROYECTO
+--------------------------------------------------------------------------------
+Automatizar la toma de pedidos de Chicamocha (hamburguesería argentina) a
+través de WhatsApp, usando un asistente conversacional basado en IA (Claude,
+vía OpenRouter) que interpreta los mensajes del cliente, calcula precios,
+valida stock en tiempo real y genera pedidos estructurados sin intervención
+humana en el caso general. Complementariamente, provee un panel de
+administración (dashboard) para que el personal del local gestione pedidos,
+stock, métricas de venta, y pueda tomar el control de una conversación
+puntual cuando la IA no puede o no debe resolverla sola.
+
+1.2 PROBLEMA QUE RESUELVE
+--------------------------------------------------------------------------------
+- Tomar pedidos por WhatsApp manualmente es lento, requiere personal dedicado
+  full-time al chat, y es propenso a errores de tipeo/cálculo de precios.
+- La cocina/caja necesita visibilidad inmediata y ordenada de los pedidos
+  entrantes (qué se pidió, para cuándo, cómo se paga, delivery o retiro).
+- Hay casos que un bot no debe resolver solo: clientes con múltiples pedidos
+  activos ambiguos, clientes molestos, pedidos de hablar con una persona.
+  El sistema necesita un mecanismo de traspaso (handoff) prolijo entre IA y
+  humano, sin perder el historial de la conversación.
+- El stock de ingredientes cambia día a día; vender un producto sin stock
+  genera fricción con el cliente. La disponibilidad debe reflejarse
+  automáticamente en lo que el bot puede y no puede vender, sin que alguien
+  tenga que "apagar" manualmente cada combo afectado.
+
+1.3 FLUJO GENERAL DEL SISTEMA (ALTO NIVEL)
+--------------------------------------------------------------------------------
+Cliente (WhatsApp)
+   → Meta WhatsApp Cloud API
+   → Webhook POST /webhook (Backend Express, Render)
+   → Reglas determinísticas previas (bienvenida, confirmaciones, cancelación)
+   → IA (Claude Haiku 4.5 vía OpenRouter, con fallback a 2 modelos gratuitos)
+   → Parseo de la respuesta (texto visible + etiquetas internas ORDER_DATA /
+     HANDOFF_HUMAN / NOMBRE_DETECTADO)
+   → Persistencia en Supabase (pedidos, messages, customers, handoffs)
+   → Envío de la respuesta al cliente vía WhatsApp Cloud API
+   → Dashboard (Next.js, Vercel) lee la misma base de datos vía Supabase
+     Realtime y refleja todo instantáneamente para los operadores
+   → Cron diario (23:59 hora Argentina) reactiva la IA en todas las
+     conversaciones que estaban en modo humano.
+
+1.4 ARQUITECTURA COMPLETA
+--------------------------------------------------------------------------------
+Dos servicios desplegados de forma independiente, que NO comparten código
+fuente (son dos proyectos npm separados, sin paquete común), pero SÍ
+comparten una única base de datos Supabase:
+
+  (A) BACKEND — Node.js + Express, desplegado en Render.
+      Es el único componente que habla directamente con el webhook de
+      WhatsApp. Contiene toda la lógica de IA, cálculo de pedidos y
+      persistencia transaccional del flujo conversacional.
+
+  (B) DASHBOARD — Next.js 15 (App Router), desplegado en Vercel.
+      Panel de administración con 4 áreas: Pedidos (Kanban), Conversaciones
+      (handoff humano estilo WhatsApp Web), Stock (ingredientes/combos) y
+      Métricas (analytics). También expone API routes propias (server-side,
+      en el mismo proyecto Next.js) que escriben en Supabase con la Service
+      Role Key, y que en algunos casos (respuesta humana, cancelación desde
+      el dashboard) llaman directamente a la WhatsApp Cloud API por su cuenta,
+      de forma totalmente independiente del backend.
+
+Ambos servicios usan la Service Role Key de Supabase para escrituras sin
+restricciones de RLS. El dashboard además usa la Anon Key desde el navegador
+para lecturas y suscripciones Realtime.
+
+No existe un broker de mensajería, cola de trabajos, ni websocket propio:
+toda la "tiempo-realidad" del dashboard se apoya exclusivamente en Supabase
+Realtime (Postgres logical replication) sobre las tablas `pedidos` y
+`conversations`.
+
+================================================================================
+2. TECNOLOGÍAS
+================================================================================
+
+2.1 FRONTEND (Dashboard)
+--------------------------------------------------------------------------------
+- Next.js 15.3 — App Router, mezcla de Server Components (layouts/páginas) y
+  Client Components ("use client" en casi todos los componentes interactivos).
+- React 19.
+- TypeScript 5.8 (proyecto 100% tipado).
+- Tailwind CSS 3.4 — con override propio de la escala `fontSize` en
+  tailwind.config.ts (tipografía general del proyecto ligeramente más grande
+  que el default de Tailwind, ver sección 3).
+- lucide-react — librería de íconos usada en absolutamente todos los
+  componentes visuales.
+- recharts 2.15 — gráficos de Analytics (AreaChart, BarChart).
+- clsx + tailwind-merge — combinados en el helper `cn()` (lib/utils.ts) usado
+  en todo el proyecto para componer clases condicionales.
+- @supabase/supabase-js — cliente de Supabase, usado en 2 variantes según el
+  contexto (browser anon-key singleton, y server con service role — ver
+  sección "Servicios del backend"/"lib").
+
+2.2 BACKEND (Bot de WhatsApp)
+--------------------------------------------------------------------------------
+- Node.js, módulos ES nativos ("type": "module" en package.json, sin
+  transpilador).
+- Express 5.
+- openai (SDK oficial de OpenAI) — usado como CLIENTE GENÉRICO contra dos
+  endpoints distintos que NO son OpenAI: OpenRouter (para los modelos de
+  chat, incluido Claude) y Groq (para transcripción de audio). El SDK de
+  OpenAI es compatible con cualquier API que implemente el formato
+  "OpenAI-compatible", por eso se reusa en ambos casos en vez de instalar
+  un SDK específico de Anthropic o de Groq.
+- @supabase/supabase-js — único cliente de base de datos del backend
+  (instanciado una vez en db/supabase.js con la Service Role Key).
+- axios — llamadas HTTP directas a la Graph API de Meta (envío de mensajes,
+  descarga de medios de audio) y a la API de Groq para descargar el audio.
+- cors, dotenv — middlewares/utilidades estándar de Express.
+- nodemon — solo en devDependencies, recarga en caliente durante desarrollo.
+
+2.3 BASE DE DATOS
+--------------------------------------------------------------------------------
+- Supabase (Postgres administrado) — usado únicamente como base de datos +
+  motor de Realtime (Auth de Supabase NO se usa; no hay sistema de login de
+  operadores, ver sección "Mejoras futuras").
+- 8 tablas: pedidos, customers, messages, combos, ingredientes, config,
+  handoffs, conversations (el detalle completo está en la sección 4).
+
+2.4 APIS EXTERNAS
+--------------------------------------------------------------------------------
+- WhatsApp Cloud API (Meta Graph API, versión v25.0) — canal único de entrada
+  y salida de mensajes con el cliente final. Se usa tanto desde el backend
+  (bot) como desde 2 API routes del dashboard (respuesta humana y
+  notificación de cancelación) — son 3 implementaciones independientes de la
+  misma llamada HTTP, sin código compartido.
+- OpenRouter (openrouter.ai) — proxy unificado multi-modelo. Modelo principal
+  configurado: `anthropic/claude-haiku-4-5`. Fallback automático en cascada a
+  `openai/gpt-oss-120b:free` y luego `openai/gpt-oss-20b:free` si el modelo
+  anterior falla (rate limit, error de proveedor, etc.).
+- Groq (api.groq.com) — transcripción de audio con el modelo
+  `whisper-large-v3-turbo`, forzado a idioma español. Se usa solo cuando el
+  cliente envía un mensaje de voz por WhatsApp.
+  NOTA: previamente el backend declaraba también `@google/generative-ai`
+  y `ws` como dependencias sin ningún uso en el código; ambas fueron
+  eliminadas de package.json en una limpieza posterior (ver sección 15).
+
+2.5 HOSTING
+--------------------------------------------------------------------------------
+- Backend → Render (Web Service de Node). 
+- Dashboard → Vercel. 
+- Base de datos → Supabase Cloud (un único proyecto compartido por ambos
+  servicios).
+
+================================================================================
+4. BASE DE DATOS
+================================================================================
+No existe ni un solo archivo de migración SQL versionado en el repositorio.
+Todo lo siguiente fue reconstruido leyendo cada query del código fuente
+(backend y dashboard). Los tipos de columna exactos (uuid vs text, etc.) son
+inferidos por el patrón de uso, no confirmados contra un esquema formal.
+
+--------------------------------------------------------------------------------
+4.1 TABLA: pedidos
+--------------------------------------------------------------------------------
+Propósito: registro central de cada pedido — su contenido, estado de
+preparación/entrega, y datos de contacto/pago/logística.
+
+Campos:
+  id                uuid        PK
+  cell              text        Teléfono del cliente (formato WhatsApp,
+                                 549XXXXXXXXXX)
+  client            text        Nombre del cliente
+  delivery_type     text        "delivery" | "pickup"
+  address           text|null   Dirección (solo si delivery)
+  requested_time    text|null   Formato "HH:MM", validado en 20:00–23:00
+  method_pay        text        "cash" | "transfer" | "mp"
+  subtotal          numeric     Suma de final_price × quantity de los items
+  total             numeric     Igual a subtotal salvo override manual desde
+                                 el dashboard (NewOrderModal/EditOrderModal
+                                 permiten un total editable a mano)
+  items             jsonb       Array de PedidoItem (ver abajo)
+  customer_notes    text|null   Nota del cliente
+  internal_notes    text|null   Nota interna del operador
+  state             text        "pending"|"confirmed"|"preparing"|"ready"|
+                                 "sent"|"delivered"|"cancelled"
+  was_updated       boolean     true si un pedido pending/preparing fue
+                                 modificado por el cliente después de
+                                 creado (dispara resaltado visual en el
+                                 Kanban)
+  created_at        timestamptz
+  updated_at        timestamptz
+  confirmed_at      timestamptz|null  Seteado automáticamente al pasar a
+                                       "confirmed"
+  delivered_at      timestamptz|null  Seteado automáticamente al pasar a
+                                       "delivered"
+
+Sub-estructura PedidoItem (dentro de items[]):
+  product_name          text     "Burga 1".."Burga 8" | "Jhon"
+  quantity               number
+  size                    text    "doble"|"triple"|"cuádruple" (o "simple"
+                                  además para "Jhon")
+  removed_ingredients    text[]
+  extra_ingredients      text[]
+  base_price              number  Precio base del combo (tabla combos)
+  extra_price             number  Tamaño + ingredientes extra
+  final_price             number  base_price + extra_price (por unidad)
+  notes                   text
+
+Relaciones (todas implícitas, sin FK formal): `cell` se relaciona con
+customers.phone, messages.phone, handoffs.cell, conversations.phone.
+
+--------------------------------------------------------------------------------
+4.2 TABLA: customers
+--------------------------------------------------------------------------------
+Propósito: perfil persistente de cada número de WhatsApp. Guarda el nombre
+ya conocido (para no volver a pedirlo) y dos máquinas de estado
+conversacional transitorias usadas por las reglas previas a la IA.
+
+Campos:
+  phone                              text      PK (clave universal)
+  name                                text|null
+  last_welcome_sent_at                timestamptz|null  Última vez que se
+                                                          envió el mensaje de
+                                                          bienvenida diaria
+  waiting_new_order_confirmation      boolean   true mientras se espera que
+                                                 el cliente confirme un
+                                                 pedido nuevo (caso: su
+                                                 pedido anterior ya está
+                                                 ready/delivered)
+  pending_new_order_data              jsonb|null ORDER_DATA tentativo a
+                                                 confirmar
+  waiting_cancel_confirmation         boolean   true mientras se espera
+                                                 confirmación de cancelación
+  pending_cancel_order_id             uuid|null Pedido candidato a cancelar
+
+--------------------------------------------------------------------------------
+4.3 TABLA: messages
+--------------------------------------------------------------------------------
+Propósito: historial completo de mensajes. Es simultáneamente (a) la memoria
+conversacional que se inyecta en el prompt de la IA (ventana de 6 h, máx 20
+mensajes) y (b) el feed visual del chat en el dashboard (sin límite de
+ventana ahí, se traen hasta 100 mensajes por conversación).
+
+Campos:
+  id              uuid        PK
+  phone           text
+  role            text        CHECK constraint — originalmente "user" |
+                               "assistant"; AMPLIADO en este proyecto para
+                               aceptar también "human" (mensaje de un
+                               operador)
+  content         text
+  operator_name   text|null   Solo tiene valor cuando role="human" — nombre
+                               del operador que respondió
+  created_at      timestamptz
+
+--------------------------------------------------------------------------------
+4.4 TABLA: combos
+--------------------------------------------------------------------------------
+Propósito: catálogo de productos vendibles (las "Burgas" y "Jhon"), con
+precio base y un flag de disponibilidad MANUAL (independiente del stock de
+ingredientes — ver "disponibilidad derivada" en 4.5).
+
+Campos:
+  id           (PK, tipo exacto no confirmado)
+  name         text         "Burga 1".."Burga 8" | "Jhon"
+  description  text|null    Texto mostrado en el menú dinámico que recibe
+                             la IA
+  price        numeric|null Precio base (en la práctica, $12000 para todas
+                             las hamburguesas)
+  available    boolean|null Toggle manual del operador desde /stock
+
+--------------------------------------------------------------------------------
+4.5 TABLA: ingredientes
+--------------------------------------------------------------------------------
+Propósito: stock individual de cada ingrediente. La disponibilidad EFECTIVA
+de un combo no se guarda en ningún lado — se DERIVA en tiempo real cruzando
+`combos.available` (manual) con el stock de los ingredientes que ese combo
+requiere obligatoriamente (mapa hardcodeado `COMBO_INGREDIENTES`, duplicado
+de forma idéntica en `backend/src/db/combos.js` y en
+`dashboard/lib/combo-ingredients.ts`):
+
+  Burga 1 → bacon, crispy, salsa de la casa
+  Burga 2 → bacon, salsa roja
+  Burga 3 → roquefort, rucula, cebolla caramelizada
+  Burga 4 → lechuga, pepinillos, salsa de la casa
+  Burga 5 → provolone, salsa de la casa
+  Burga 6 → huevo, bacon, salsa roja
+  Burga 7 → lechuga, tomate, cebolla
+  Burga 8 → salsa roja
+  Jhon    → (ninguno — nunca se ve afectado por stock de ingredientes)
+
+Un combo queda "no disponible" si: `combo.available === false` (apagado a
+mano) O CUALQUIERA de sus ingredientes requeridos está agotado.
+
+Campos:
+  id          uuid/text   PK
+  name        text        ej. "bacon", "cheddar", "salsa roja", "rucula"...
+  available   boolean
+
+--------------------------------------------------------------------------------
+4.6 TABLA: config
+--------------------------------------------------------------------------------
+Propósito: tabla clave-valor para parámetros operativos editables sin tocar
+código ni redeploy.
+
+Campos:
+  key    text   PK — valores en uso: "wait_time_pickup", "wait_time_delivery"
+  value  text   Almacenado como string, parseado a number en frontend y
+                backend
+
+--------------------------------------------------------------------------------
+4.7 TABLA: handoffs
+--------------------------------------------------------------------------------
+Propósito: ES LA FUENTE DE VERDAD que controla si el bot responde o no a un
+número. Mientras exista una fila de `handoffs` para un `cell` con
+`created_at` dentro de las últimas 24 horas, `isInHandoff()` devuelve true y
+el backend NO procesa ese mensaje con IA (solo lo guarda para que el
+dashboard lo muestre).
+
+Campos:
+  id          uuid        PK
+  cell        text
+  created_at  timestamptz
+
+Importante: el campo `conversations.status` (tabla 4.8) es una proyección
+de UI — no gobierna al bot. El control real del bot pasa exclusivamente por
+esta tabla. Por eso "Reactivar IA"/"Cerrar conversación" en el dashboard
+SIEMPRE borran filas de `handoffs` (para reactivar al bot al instante, sin
+esperar el TTL de 24 h), mientras que "Liberar conversación" deliberadamente
+NO toca `handoffs` (el bot debe seguir bloqueado, solo se libera el
+operador asignado).
+
+--------------------------------------------------------------------------------
+4.8 TABLA: conversations
+--------------------------------------------------------------------------------
+Agregada en una sesión de trabajo posterior al sistema original, para
+soportar el panel de Conversaciones humanas estilo WhatsApp Web. Es una
+tabla de PROYECCIÓN/RESUMEN (una fila por teléfono) que el dashboard usa
+para listar y priorizar conversaciones sin tener que agregar la tabla
+`messages` en cada render. El backend del bot NO la conoce ni escribe en
+ella directamente — se mantiene sincronizada exclusivamente mediante
+triggers de base de datos.
+
+Campos:
+  id                   uuid          PK
+  phone                text          UNIQUE — una fila por cliente
+  client_name          text|null
+  status               text          "ai" | "human_requested" |
+                                     "human_active" | "closed"
+  last_message         text|null
+  last_message_at      timestamptz|null
+  unread_count         integer
+  assigned_operator    text|null
+  human_requested_at   timestamptz|null
+  human_taken_at       timestamptz|null
+  created_at           timestamptz
+  updated_at           timestamptz
+
+Mecanismo de sincronización (funciones/triggers SQL aplicados directamente
+sobre la base de producción vía MCP de Supabase — NO existen como archivo
+.sql en el repo):
+
+  fn_upsert_conversation_on_message()
+    Trigger AFTER INSERT en `messages`. Hace upsert en `conversations`
+    actualizando last_message, last_message_at, unread_count y updated_at
+    cada vez que se guarda un mensaje (de cualquier rol).
+
+  fn_handoff_to_conversation()
+    Trigger AFTER INSERT en `handoffs`. Fuerza
+    `conversations.status = 'human_requested'` para ese teléfono. Es lo que
+    dispara la alerta sonora/visual del dashboard cuando el bot emite
+    [HANDOFF_HUMAN] o cuando detecta múltiples pedidos cancelables
+    ambiguos.
+
+Adicionalmente, en esta misma sesión se extendió el CHECK constraint de
+`messages.role` para aceptar "human" (originalmente solo "user"/
+"assistant"), y se agregó la columna `messages.operator_name`.
+
+================================================================================
+5. FLUJO DE PEDIDOS (paso a paso, código real)
+================================================================================
+
+PASO 1 — Cliente envía mensaje
+  Texto o audio, vía WhatsApp, al número de negocio.
+
+PASO 2 — Meta reenvía el webhook
+  POST a `/webhook` en el backend. El handler responde `res.sendStatus(200)`
+  INMEDIATAMENTE, antes de procesar nada, para cumplir el SLA de Meta y
+  evitar reintentos del lado de Meta. Todo lo que sigue ocurre de forma
+  asíncrona después de esa respuesta.
+
+PASO 3 — Extracción del mensaje
+  `req.body.entry?.[0]?.changes?.[0]?.value?.messages?.[0]`. Si no hay
+  mensaje (puede ser un evento de "status", no de mensaje), se corta ahí.
+
+PASO 4 — Chequeo de handoff (isInHandoff)
+  Si el teléfono tiene una fila en `handoffs` de las últimas 24 h, el bot
+  NO genera ninguna respuesta. Solo guarda el mensaje del cliente en
+  `messages` (role="user") — fire-and-forget — para que el operador lo vea
+  en tiempo real en el dashboard. Corta el procesamiento ahí.
+
+PASO 5 — Transcripción de audio (si aplica)
+  Si `message.type === "audio"`: se obtiene la URL del medio en la Graph
+  API usando el media id, se descarga el binario, y se transcribe con Groq
+  Whisper (es). Si falla, se responde un mensaje pidiendo texto y se corta.
+  El texto transcripto reemplaza a `text` para el resto del flujo, como si
+  el cliente lo hubiera tipeado.
+
+PASO 6 — Reglas determinísticas previas a la IA (sin gastar tokens)
+  a) Bienvenida diaria (shouldSendDailyWelcome): si es la primera
+     interacción del día para ese cliente, se envía un mensaje de
+     bienvenida fijo (personalizado con el nombre si ya se conoce) y se
+     corta el flujo — NO se llama a la IA en este turno.
+  b) Confirmación de pedido nuevo pendiente: si el cliente tenía
+     `waiting_new_order_confirmation=true` y responde con una confirmación
+     (regex `CONFIRMATION_RE`: "si"/"dale"/"ok"/"perfecto"/etc., o "quiero
+     otro pedido"), se crea el pedido directamente con `force_new: true`,
+     SIN pasar por la IA.
+  c) Confirmación de cancelación pendiente: análogo — si confirma, se
+     cancela el pedido directamente sin IA.
+  d) Detección de intención de cancelación (regex `CANCEL_INTENT_RE`):
+       - 0 pedidos cancelables → se informa que no hay nada para cancelar
+         (o que el pedido ya está finalizado).
+       - 2+ pedidos cancelables → AMBIGUO: se activa handoff humano
+         (`saveHandoff`) y se informa al cliente que se lo deriva — el bot
+         no decide solo cuál cancelar.
+       - exactamente 1 pedido cancelable → se pide confirmación explícita
+         (no se cancela todavía, queda pendiente para el paso 6c del
+         siguiente mensaje).
+  Si ninguna regla aplica, se continúa hacia la IA.
+
+PASO 7 — Construcción del contexto dinámico (en paralelo, Promise.all)
+  - `getHistory(phone)` — últimos mensajes (6 h, máx 20).
+  - `getMenuContext()` — texto de PRODUCTOS_DISPONIBLES/AGOTADOS, derivado
+    en vivo del stock de ingredientes.
+  - `getComboAvailability()` — misma info en formato de datos, para
+    validar el ORDER_DATA después de que la IA responda.
+  - `getConfig()` — tiempos de espera configurados.
+  - `getActivePedido(phone)` — pedido en pending/preparing/ready/delivered
+    de las últimas 24 h, si existe.
+  - `getOrCreateCustomer(phone)` — perfil del cliente (nombre conocido o
+    no).
+
+PASO 8 — Construcción del systemPrompt
+  Un único template string gigante (~1400 líneas) que combina identidad,
+  reglas de negocio y el contexto dinámico del paso 7. Ver sección 6 para
+  el detalle completo.
+
+PASO 9 — Llamada a la IA
+  `askAI(history + mensaje actual, systemPrompt)`. Internamente prueba en
+  orden: `anthropic/claude-haiku-4-5` → `openai/gpt-oss-120b:free` →
+  `openai/gpt-oss-20b:free`, devolviendo la primera respuesta exitosa.
+
+PASO 10 — Parseo de la respuesta cruda
+  Se buscan 3 posibles etiquetas internas (nunca visibles para el cliente):
+    [HANDOFF_HUMAN]
+    [ORDER_DATA]{...json...}[/ORDER_DATA]
+    [NOMBRE_DETECTADO]texto[/NOMBRE_DETECTADO]
+  El texto que efectivamente se envía al cliente (`aiResponse`) es la
+  respuesta cruda con las 3 etiquetas removidas vía regex + `.trim()`.
+
+PASO 11 — Procesamiento de ORDER_DATA (si la IA emitió uno)
+  a) Guard de seguridad "ready/delivered": si el pedido activo del cliente
+     ya está en estado "ready" o "delivered" y la IA generó ORDER_DATA SIN
+     `force_new: true` (es decir, el prompt no se respetó), el backend NO
+     crea ni modifica el pedido. En cambio calcula qué ítems son
+     realmente nuevos respecto al pedido ya entregado/listo
+     (`extractNewItems`) y los guarda en `pending_new_order_data` del
+     customer, esperando confirmación explícita en el próximo mensaje
+     (vuelve al paso 6b). Al cliente se le responde el mensaje fijo: "Tu
+     pedido anterior ya está listo... Si querés hacer otro pedido lo creo
+     como una orden nueva."
+  b) Validación de stock: se filtran los items cuyo `product_name` esté en
+     la lista de agotados — CON UNA EXCEPCIÓN: si el combo está agotado
+     únicamente por un ingrediente puntual y el cliente ya pidió ese combo
+     SIN ese ingrediente (removed_ingredients lo incluye), se permite. Si
+     queda algún ítem bloqueante, se descarta el ORDER_DATA completo (no
+     se guarda ningún pedido) — el texto visible ya le habrá avisado al
+     cliente que no hay stock.
+  c) Si pasa la validación: `upsertPedido({...orderData, cell: from})` —
+     fire-and-forget, no bloquea el envío de la respuesta al cliente.
+  d) Si `orderData.client` viene y el customer todavía no tenía nombre
+     guardado, se actualiza `customers.name` como respaldo.
+
+PASO 12 — Detección temprana de nombre
+  Si el customer no tenía nombre y la IA emitió `[NOMBRE_DETECTADO]`, se
+  guarda inmediatamente — sin esperar a que el pedido esté completo.
+
+PASO 13 — Persistencia de mensajes
+  Se guardan en `messages` tanto el mensaje del cliente (role="user") como
+  la respuesta visible de la IA (role="assistant").
+
+PASO 14 — Activación de handoff (si corresponde)
+  Si se detectó `[HANDOFF_HUMAN]`, se inserta una fila en `handoffs` — el
+  trigger SQL pone automáticamente `conversations.status = 'human_requested'`
+  y eso dispara la alerta sonora/visual en el dashboard.
+
+PASO 15 — Envío de la respuesta
+  `sendWhatsAppMessage(from, aiResponse)` vía la Graph API de Meta.
+
+PASO 16 — upsertPedido() en detalle (backend/src/db/pedidos.js)
+  - `preprocessOrderData()` (burgerMatcher.js): normaliza `size` a "doble"
+    si falta o es inválido, y aplica equivalencias automáticas de combos
+    (ej. "Burga 2" + extra "huevo" → se renombra a "Burga 6" sin cobrar el
+    extra; o, de forma genérica, si quitar ingredientes de un combo da
+    exactamente el set de ingredientes de OTRO combo ya existente, se
+    renombra a ese combo y se vacía `removed_ingredients`, evitando un
+    pedido "raro" o un cobro incorrecto).
+  - Valida `requested_time` (si existe) contra el formato HH:MM y la
+    ventana 20:00–23:00 — si es inválido, el guardado se aborta en
+    silencio (`return` temprano, sin guardar nada y sin avisar al
+    cliente desde esta capa — depende de que la IA ya haya validado esto
+    antes de responder).
+  - Enriquece cada item: busca `base_price` real en la tabla `combos`,
+    calcula `extra_price` (tamaño: triple +$2000, cuádruple +$4000;
+    ingredientes extra: +$2000 cada uno) y `final_price`.
+  - `subtotal = total = Σ final_price × quantity` de todos los items.
+  - Si `force_new === true`: INSERT directo, sin buscar pedido existente.
+  - Si no: busca un pedido del mismo `cell` en estado pending/preparing de
+    las últimas 6 h.
+      - Si existe y NO hay cambios reales (`hasChanges` compara horario,
+        método de pago, dirección, tipo de entrega e items normalizados)
+        → no hace nada (evita ruido/updates redundantes).
+      - Si existe y SÍ hay cambios → UPDATE con `was_updated: true` (esto
+        dispara la animación/alerta "Actualizado" en el Kanban del
+        dashboard).
+      - Si no existe → INSERT nuevo.
+
+PASO 17 — Dashboard refleja el cambio en tiempo real
+  `useOrders` (hook) tiene una suscripción Supabase Realtime a
+  `postgres_changes` de la tabla `pedidos`:
+    - INSERT → resalta la card nueva (`animate-slide-in` + ring naranja,
+      3 segundos) y reproduce un tono ascendente (880-1100-880 Hz).
+    - UPDATE no originado localmente por el propio operador (se rastrea
+      con un `Set` de IDs "actuados localmente", limpiado a los 4 s) →
+      marca la card con el indicador pulsante "Actualizado" y reproduce un
+      tono distinto (520-680 Hz).
+
+PASO 18 — Operación en cocina/caja
+  Desde el Kanban (página "/"), drag&drop o botones de acción mueven el
+  pedido por los estados: pending/confirmed → preparing → ready/sent →
+  delivered. Cada cambio hace `PATCH /api/orders/[id]` (valida el enum de
+  7 estados) y, si el nuevo estado es "delivered" o "confirmed", setea
+  automáticamente el timestamp correspondiente.
+
+PASO 19 — Cancelación desde el dashboard
+  `POST /api/orders/[id]/cancel` — solo permitido si el pedido está en
+  pending/preparing. Marca `state="cancelled"` y notifica al cliente por
+  WhatsApp: "Tu pedido fue cancelado por el local 👍" (fire-and-forget,
+  llamada directa a la Graph API desde el propio código del dashboard).
+
+================================================================================
+6. FLUJO DE IA
+================================================================================
+
+6.1 CÓMO SE CONSTRUYE EL PROMPT
+--------------------------------------------------------------------------------
+Es un único `systemPrompt` (template string, ~1400 líneas), reconstruido EN
+CADA mensaje entrante (no se cachea entre turnos), compuesto por:
+
+  a) Identidad y tono: siempre en español, nunca admitir que es una IA,
+     tono argentino casual, sin markdown, sin bullets con "-"/"*", sin
+     inventar productos/precios/horarios.
+  b) Datos fijos del negocio: horario (20:00–23:00 todos los días),
+     ubicación (Belgrano y Maipú), delivery sin costo en toda la ciudad,
+     alias de transferencia ("leosko").
+  c) Bloque "ESTADO ACTUAL" (dynamicContext) — inyectado en cada turno:
+     si el cliente tiene pedido activo (con su JSON completo), el estado
+     de ese pedido (none/pending/preparing/ready/delivered), el nombre del
+     cliente si ya se conoce (o "null"), y el `MATCHING_CONTEXT_JSON`
+     (mapa estático de qué ingredientes tiene cada combo "matchable" y
+     cuáles productos quedan excluidos del matching automático).
+  d) `menuContext` (getMenuContext()) — PRODUCTOS_DISPONIBLES con precio y
+     descripción, PRODUCTOS_AGOTADOS (cada uno con el motivo: "(FALTA:
+     ingrediente)" si es por un ingrediente puntual, o "(AGOTADO)" si está
+     apagado manualmente), e ingredientes disponibles/sin stock — TODO
+     generado en tiempo real desde `combos`+`ingredientes` en cada mensaje.
+  e) Decenas de reglas de negocio con ejemplos correctos/incorrectos
+     explícitos, entre ellas:
+       - Cálculo de precios (papas incluidas vs. porción extra a $2000,
+         tamaños, ingredientes extra a $2000 c/u, quitar ingredientes NO
+         cambia el precio).
+       - Equivalencias de combos obligatorias (ej. Burga 2 + huevo =
+         Burga 6 — usar siempre el nombre del combo equivalente, nunca
+         cobrar el ingrediente como extra si ya forma una equivalencia
+         conocida).
+       - Método de cálculo del total obligatorio para pedidos de más de 3
+         ítems: agrupar por precio final, multiplicar cantidad × precio,
+         sumar grupos (para evitar errores de suma ítem por ítem).
+       - Algoritmo de matching de hamburguesas por ingredientes
+         mencionados por el cliente (usando MATCHABLE_PRODUCTS), con
+         reglas especiales explícitas para "solo bacon", "solo cheddar",
+         "solo carne", "carne con bacon" (cada una resuelve a un combo
+         específico con remociones puntuales, para evitar que el modelo
+         improvise).
+       - Manejo de productos agotados: si el combo está agotado por un
+         ingrediente puntual y el cliente ya lo está pidiendo sin ese
+         ingrediente, SE PERMITE (no hay que avisar falta de stock para
+         algo que el cliente ya no quiere). Excepción aparte: "palta"
+         nunca existió en el menú — respuesta fija distinta a la de
+         "sin stock".
+       - Detección temprana de nombre (etiqueta NOMBRE_DETECTADO).
+       - Reglas de horario: tabla de conversión de horario coloquial
+         argentino (siempre nocturno: "8" → 20:00, "8 y media" → 20:30,
+         etc., sumando 12 a cualquier hora dicha entre 8 y 11), validación
+         de rango 20:00–23:00 inclusive, y pedido de confirmación si el
+         horario convertido cae fuera de rango.
+       - Reconocimiento automático de dirección → delivery_type=delivery
+         (sin volver a preguntar "¿es delivery?"), y de "retiro"/"paso a
+         buscar" → pickup con address=null.
+       - Reglas de cuándo crear un pedido NUEVO (`force_new: true`) vs.
+         actualizar el existente (`force_new: false`): solo true cuando
+         el cliente pide explícitamente "otro pedido"/"pedido nuevo", o
+         tras confirmar continuar después de que el pedido anterior ya
+         esté ready/delivered.
+       - Formato exacto del mensaje de confirmación final visible (con
+         emojis fijos: 🍔📍👤💳⏰💰).
+       - Formato exacto y obligatorio de las etiquetas internas
+         (ORDER_DATA con apertura/cierre correctos, nunca visibles).
+       - Equivalencias de método de pago: "mp"/"MercadoPago"/etc. se
+         interpretan siempre como `method_pay: "transfer"`.
+  f) Checklist final de "VALIDACIÓN OBLIGATORIA ANTES DE EMITIR
+     ORDER_DATA" (12 puntos) pidiéndole al modelo que se autoverifique
+     antes de responder (productos existen, no están agotados, total
+     correcto, papas no cobradas de más, método de pago válido, horario
+     en rango, tamaño default correcto, casos especiales de "solo
+     carne"/"solo cheddar" resueltos, nombre detectado si correspondía,
+     sin frases prohibidas).
+
+6.2 CÓMO SE ENVÍA A CLAUDE
+--------------------------------------------------------------------------------
+NO se usa el SDK oficial de Anthropic. Se usa el SDK `openai` (Node)
+configurado con `baseURL: "https://openrouter.ai/api/v1"` y
+`apiKey: OPENROUTER_API_KEY`. OpenRouter actúa como proxy unificado: el
+mismo formato de llamada (`chat.completions.create`) sirve para pedir
+Claude, GPT, o cualquier otro modelo soportado, solo cambiando el string
+`model`.
+
+`askAI(history, systemPrompt)` arma:
+  messages: [{role: "system", content: systemPrompt}, ...history]
+y prueba en orden, con captura de excepción y log de warning entre
+intentos:
+  1. anthropic/claude-haiku-4-5      (modelo principal, de pago)
+  2. openai/gpt-oss-120b:free        (fallback gratuito)
+  3. openai/gpt-oss-20b:free         (segundo fallback gratuito)
+Si los 3 fallan, se lanza un Error y el backend responde al cliente: "Ups,
+tuve un problema. Intenta de nuevo en un momento 🙏".
+
+6.3 CÓMO SE INTERPRETA LA RESPUESTA
+--------------------------------------------------------------------------------
+La respuesta cruda puede contener, mezcladas con el texto visible, hasta 3
+etiquetas (ver 6.1.e/paso 10). Se remueven con 3 regex independientes antes
+de construir el texto que efectivamente recibe el cliente.
+
+6.4 CÓMO SE DETECTA ORDER_DATA
+--------------------------------------------------------------------------------
+`rawResponse.match(/\[ORDER_DATA\]([\s\S]*?)\[\/ORDER_DATA\]/)` — captura el
+primer bloque que encuentre y lo parsea con `JSON.parse`. Si el JSON es
+inválido (el modelo "alucinó" una sintaxis rota), se descarta con un
+`console.warn`, SIN romper el flujo — el cliente de todas formas recibe el
+texto visible de la respuesta.
+
+6.5 CÓMO SE ACTUALIZAN PEDIDOS EXISTENTES / SE CREAN NUEVOS
+--------------------------------------------------------------------------------
+Decisión 100% delegada al flag `force_new` que la propia IA debe setear
+según las reglas del prompt (ver 6.1.e). El backend aplica una segunda capa
+de seguridad (el "guard ready/delivered" del paso 11a) para el caso en que
+la IA se olvide de pedir confirmación antes de mezclar pedidos.
+
+6.6 CÓMO SE IDENTIFICAN CLIENTES
+--------------------------------------------------------------------------------
+Por número de teléfono (`cell`/`phone`), clave universal en todas las
+tablas. `getOrCreateCustomer()` hace un get-or-insert atómico: si el
+INSERT falla por unicidad (código Postgres 23505, dos mensajes casi
+simultáneos del mismo número), se recupera el registro ya creado por el
+proceso concurrente en vez de fallar.
+
+6.7 CÓMO SE DETECTAN NOMBRES
+--------------------------------------------------------------------------------
+Dos mecanismos complementarios:
+  a) Detección temprana (principal): en cualquier punto de la
+     conversación en que `NOMBRE_CLIENTE` sea null en el contexto
+     dinámico y el cliente mencione su nombre/apellido, la IA debe emitir
+     `[NOMBRE_DETECTADO]nombre[/NOMBRE_DETECTADO]` al final de su
+     respuesta (invisible). El backend lo captura con regex y llama
+     `updateCustomerName()` de inmediato — no espera a que el pedido esté
+     completo.
+  b) Respaldo: al crear/actualizar un pedido, si `orderData.client` viene
+     y el customer aún no tenía nombre, también se actualiza por ese
+     camino.
+Una vez que `customer.name` no es null, el prompt PROHÍBE expresamente
+volver a emitir `[NOMBRE_DETECTADO]` (para no pisar el nombre ya
+guardado con falsos positivos de detección).
+
+6.8 EXTRACTOR ALTERNATIVO (ELIMINADO)
+--------------------------------------------------------------------------------
+Existía una función `extractOrderJSON()` (ai/openrouter.js) con un segundo
+prompt ("Sos un extractor de datos...") pensada para reconstruir el
+ORDER_DATA a partir de la conversación completa, como mecanismo de
+respaldo o auditoría. No tenía ninguna llamada desde `webhook.js` — era
+código preparado pero nunca integrado al flujo en producción. Fue
+eliminada del código en la limpieza descrita en la sección 15.
+
+================================================================================
+7. FLUJO DE CONVERSACIONES (handoff IA ↔ humano)
+================================================================================
+
+7.1 ESTADOS (conversations.status)
+--------------------------------------------------------------------------------
+  ai                — La IA atiende normalmente.
+  human_requested   — El cliente necesita atención humana, todavía sin
+                       operador asignado.
+  human_active      — Un operador tomó la conversación y está respondiendo.
+  closed            — Conversación archivada/cerrada manualmente.
+
+7.2 TRANSICIONES
+--------------------------------------------------------------------------------
+ai → human_requested
+  Automático, vía trigger SQL `fn_handoff_to_conversation()` al insertarse
+  una fila en `handoffs`. Dos disparadores posibles desde el backend:
+    1. La IA detecta pedido de hablar con una persona y emite
+       `[HANDOFF_HUMAN]`.
+    2. El backend detecta que el cliente tiene 2+ pedidos cancelables
+       simultáneos y no puede decidir solo cuál cancelar.
+
+human_requested → human_active ("Tomar conversación")
+  `POST /api/conversations/[phone]/take`. Inserta (si no existe) una fila
+  en `handoffs` (no-op silencioso si ya existía) y hace UPDATE de
+  `conversations`: status="human_active", assigned_operator=<nombre>,
+  human_taken_at=now().
+
+human_active → human_requested ("Liberar conversación")
+  `POST /api/conversations/[phone]/release`. UPDATE: status=
+  "human_requested", assigned_operator=null, human_taken_at=null.
+  Deliberadamente NO borra `handoffs` — el bot debe seguir bloqueado,
+  esperando que CUALQUIER operador la retome.
+
+human_requested|human_active → ai ("Devolver a IA"/"Reactivar IA")
+  `POST /api/conversations/[phone]/close`. DELETE de todas las filas de
+  `handoffs` para ese `cell` (reactiva al bot DE INMEDIATO, sin esperar el
+  TTL de 24 h) + UPDATE conversations: status="ai", limpia operador y
+  timestamps.
+
+cualquier estado → closed ("Cerrar conversación")
+  `POST /api/conversations/[phone]/archive`. Igual que "close" (borra
+  handoffs, reactiva al bot) pero deja status="closed" en vez de "ai" —
+  funciona como un archivado visual ("esta charla terminó"), aunque
+  técnicamente el bot ya puede volver a responder si el cliente escribe
+  de nuevo.
+
+Reactivación automática nocturna (cron)
+  Vercel Cron llama `GET /api/cron/reset-conversations` todos los días a
+  las `59 2 * * *` (UTC) = 23:59 hora Argentina (UTC-3). El handler:
+  pone status="ai" a TODAS las conversaciones en human_requested/
+  human_active, y borra TODOS los registros de `handoffs` — devuelve el
+  control completo a la IA al cierre del día operativo. Protegido por el
+  header `x-cron-secret` comparado contra la variable de entorno
+  `CRON_SECRET` (ver advertencia en sección 15.3).
+
+7.3 TOMA DE CONVERSACIÓN HUMANA (UX)
+--------------------------------------------------------------------------------
+El operador abre `/conversations`, ve la lista priorizada — orden:
+human_requested primero, luego human_active, luego ai, luego closed; dentro
+de cada grupo, por `updated_at` descendente. Hace click en "Tomar
+conversación" (visible cuando status=human_requested) o "Intervenir"
+(visible cuando status=ai, para tomar control manualmente sin que el
+cliente lo haya pedido).
+
+7.4 RESPUESTA HUMANA
+--------------------------------------------------------------------------------
+Con la conversación en human_active, el input de texto (`ConvInput`) se
+habilita (está deshabilitado en cualquier otro estado). Al enviar:
+`POST /api/conversations/[phone]/reply` con `{message, operator_name}`:
+  - Guarda el mensaje en `messages` con role="human" y
+    operator_name=<nombre del operador>.
+  - Dispara (fire-and-forget) el envío real por WhatsApp Cloud API,
+    usando las mismas credenciales (WHATSAPP_TOKEN, PHONE_NUMBER_ID) que
+    usa el bot, pero desde un código completamente separado dentro del
+    dashboard (no reutiliza `backend/src/services/whatsapp.js`).
+
+7.5 INTEGRACIÓN CON WHATSAPP (duplicación intencional)
+--------------------------------------------------------------------------------
+Tanto el backend (bot) como 2 API routes del dashboard (reply de operador y
+notificación de cancelación) llaman directamente a
+`https://graph.facebook.com/v25.0/{PHONE_NUMBER_ID}/messages` con Bearer
+token. La normalización de número de teléfono (formato webhook
+549XXXXXXXXXX de 13 dígitos → formato API 54XXXX15XXXXXX de 14 dígitos)
+está duplicada idénticamente en 3 archivos:
+  - backend/src/services/whatsapp.js
+  - dashboard/app/api/conversations/[phone]/reply/route.ts
+  - dashboard/app/api/orders/[id]/cancel/route.ts
+
+7.6 MENSAJES DURANTE HANDOFF
+--------------------------------------------------------------------------------
+Cuando el bot detecta que un teléfono está en handoff, NO procesa el
+mensaje con IA, pero SÍ lo guarda en `messages` (role="user") para que el
+operador lo vea en tiempo real en el chat del dashboard. Este fue el ÚNICO
+cambio realizado sobre la lógica original del bot para soportar el panel
+de conversaciones humanas — el resto del sistema se construyó por fuera,
+sin tocar la lógica de IA/pedidos existente.
+
+7.7 NOTIFICACIONES EN EL DASHBOARD
+--------------------------------------------------------------------------------
+`useHumanConversations` mantiene una suscripción Realtime a `conversations`
+(eventos INSERT/UPDATE):
+  - Sonido de "atención humana requerida" — tonos descendentes urgentes
+    (1100→800→1100→800→1100 Hz) — al pasar a human_requested.
+  - Sonido de "mensaje nuevo" — más suave (700→920 Hz) — al llegar un
+    mensaje a una conversación ya en human_requested/human_active.
+  - Indicador visual persistente: badge en el ícono "Conversaciones" del
+    Sidebar — 🔴 cantidad human_requested, 🔵 cantidad human_active —
+    alimentado por `ConvCountContext` (Context independiente, con su
+    propia suscripción Realtime, montado en el layout raíz para estar
+    disponible en cualquier pantalla del dashboard, no solo en
+    /conversations).
+  - Animación `slide-in` + ring naranja en el ítem de la lista cuando
+    INGRESA una conversación nueva en human_requested.
+  - Dot verde pulsante sobre el avatar cuando llega un mensaje nuevo a una
+    conversación que no está siendo vista en ese momento.
+
+================================================================================
+8. DASHBOARD
+================================================================================
+
+8.1 PÁGINA PRINCIPAL — "/" (Pedidos)
+--------------------------------------------------------------------------------
+Qué hace: vista operativa del día. Header con botón "Nuevo pedido"
+(NewOrderModal), fila de configuración de tiempos de espera editable
+inline (WaitTimeConfig), grid de 5 KPIs del día (facturación total,
+efectivo, transferencia, cantidad de pedidos, cantidad de hamburguesas —
+recalculados en cada cambio Realtime de `pedidos`), y el Kanban
+(KanbanBoard) con 5 columnas: Retira, Delivery, En preparación, Listos,
+Entregados — con drag&drop para reordenar dentro de una columna (solo
+visual/local, no persiste orden en la base) y botones para avanzar/
+retroceder de estado. En mobile, las columnas se reemplazan por tabs
+horizontales (una columna visible a la vez).
+Qué datos consume: `pedidos` (Realtime, vía useOrders), `config` (vía
+useConfig).
+Qué APIs utiliza: POST /api/orders, PATCH/PUT/DELETE /api/orders/[id],
+POST /api/orders/[id]/cancel, PUT /api/config.
+
+8.2 CONVERSACIONES — "/conversations" y "/conversations/[id]"
+--------------------------------------------------------------------------------
+Qué hace: panel de atención humana estilo WhatsApp Web. Layout de hasta 3
+columnas según breakpoint:
+  - Desktop (≥lg): Lista (ConvSidebar, ~288px) + Chat (ConvChat, flex-1) +
+    Ficha de cliente (ConvInfoPanel, ~320-384px), simultáneamente visibles.
+  - Tablet (md–lg): Lista + Chat. La ficha de cliente queda oculta por
+    defecto, con un botón ⓘ en el header del chat para mostrarla/ocultarla
+    superpuesta.
+  - Mobile (<md): solo la Lista es visible en "/conversations"; tocar una
+    conversación navega a la ruta dedicada "/conversations/[phone]", que
+    muestra el Chat a pantalla completa con botón "atrás", y un botón
+    "Ver información" que abre la ficha de cliente como overlay
+    full-screen.
+Qué datos consume: `conversations` y `messages` (ambas Realtime, vía
+useHumanConversations / useConversationMessages), `pedidos` (lectura
+puntual, no Realtime, dentro de ConvInfoPanel — pedido más reciente +
+historial de hasta 5).
+Qué APIs utiliza: POST /api/conversations/[phone]/{take,release,close,
+archive,reply}, PATCH /api/conversations/[phone]/read.
+
+8.3 STOCK — "/stock"
+--------------------------------------------------------------------------------
+Qué hace: dos tablas lado a lado. "Ingredientes" — toggle on/off directo
+por ingrediente. "Productos" — toggle manual por combo + badge de estado
+EFECTIVO ("Disponible"/"No disponible") + indicador "sin <ingrediente>"
+cuando el bloqueo viene del stock (no de una decisión manual) — en ese
+caso el toggle manual queda deshabilitado, para no generar contradicciones
+visuales (no se puede "forzar disponible" un combo al que le falta un
+ingrediente real).
+Qué datos consume: `ingredientes` y `combos` (lectura simple, sin
+Realtime — requiere refrescar para ver cambios hechos por otro operador).
+Qué APIs utiliza: PATCH /api/ingredientes/[id], PATCH /api/combos/[name].
+
+8.4 ANALYTICS — "/analytics" (Métricas)
+--------------------------------------------------------------------------------
+Qué hace: estadísticas de los últimos 30 días. 4 stat cards (facturación
+30 días, facturación 7 días, hamburguesas vendidas, producto más vendido),
+gráfico de área de facturación diaria (14 días en el eje), gráfico de
+barras de pedidos por hora DEL DÍA ACTUAL, y ranking Top 5 productos más
+vendidos con barra de progreso relativa.
+Qué datos consume: `pedidos` (lectura completa de 30 días, SIN Realtime —
+se calcula una sola vez al montar el componente; refrescar la página es la
+única forma de actualizar).
+Qué APIs utiliza: ninguna (solo lectura directa a Supabase desde el
+cliente).
+
+================================================================================
+9. APIS (todos los endpoints)
+================================================================================
+
+--------------------------------------------------------------------------------
+9.1 BACKEND (Express) — base: <url-render>
+--------------------------------------------------------------------------------
+GET /webhook
+  Verificación de Meta (handshake único al configurar la app).
+  Parámetros (query string): hub.mode, hub.verify_token, hub.challenge.
+  Respuesta: 200 + echo de hub.challenge si hub.verify_token coincide con
+  VERIFY_TOKEN; 403 en caso contrario.
+
+POST /webhook
+  Recepción de mensajes entrantes de WhatsApp (texto o audio).
+  Parámetros: body completo del webhook de Meta (estructura
+  entry[0].changes[0].value.messages[0]).
+  Respuesta: 200 inmediato (sin body relevante) — todo el procesamiento es
+  asíncrono después de responder. Ver secciones 5 y 6.
+
+--------------------------------------------------------------------------------
+9.2 DASHBOARD — Pedidos
+--------------------------------------------------------------------------------
+POST /api/orders
+  Crea un pedido manual desde el dashboard.
+  Body: { cell, client, delivery_type, address?, method_pay,
+          requested_time?, customer_notes?, internal_notes?, items[],
+          total? }
+  Validaciones: cell/client obligatorios y con longitud máxima;
+  delivery_type ∈ {delivery,pickup}; method_pay ∈ {cash,transfer,mp};
+  items array, máx 20 elementos.
+  Respuesta: { pedido } (200) | { error } (400/500).
+
+GET /api/orders/[id]
+  Obtiene un pedido por id.
+  Respuesta: { pedido } (200) | { error: "Pedido no encontrado" } (404).
+
+PATCH /api/orders/[id]
+  Cambia únicamente el estado.
+  Body: { state }
+  Validación: state ∈ {pending,confirmed,preparing,ready,sent,delivered,
+  cancelled}. Si state="delivered" → setea delivered_at; si
+  state="confirmed" → setea confirmed_at.
+  Respuesta: { success: true } (200) | { error } (400/500).
+
+PUT /api/orders/[id]
+  Edición completa del pedido (cliente, entrega, dirección, pago, horario,
+  estado, items, notas, total).
+  Body: cualquier subconjunto de los campos editables.
+  Validaciones: mismos enums que arriba si los campos están presentes;
+  items ≤20 si se incluyen. Recalcula precios server-side si vienen
+  items. Marca was_updated=true.
+  Respuesta: { pedido } (200) | { error } (400/500).
+
+DELETE /api/orders/[id]
+  Borra el pedido definitivamente (sin soft-delete).
+  Respuesta: { success: true } (200) | { error } (500).
+
+POST /api/orders/[id]/cancel
+  Cancela el pedido (solo si está pending/preparing) y notifica al
+  cliente por WhatsApp ("Tu pedido fue cancelado por el local 👍",
+  fire-and-forget).
+  Respuesta: { success: true } (200) | { error } (404 si no existe, 400
+  si el estado no permite cancelar, 500 en error de DB).
+
+--------------------------------------------------------------------------------
+9.3 DASHBOARD — Conversaciones humanas
+--------------------------------------------------------------------------------
+POST /api/conversations/[phone]/take
+  Toma la conversación para el operador actual.
+  Body: { operator_name? } (default "Operador" si no viene)
+  Efecto: inserta handoff (no-op si ya existe) + UPDATE conversations
+  status=human_active, assigned_operator, human_taken_at.
+  Respuesta: { success: true } (200) | { error } (500).
+
+POST /api/conversations/[phone]/release
+  Libera al operador sin reactivar la IA.
+  Body: ninguno requerido.
+  Efecto: UPDATE conversations status=human_requested, limpia
+  assigned_operator y human_taken_at. NO toca handoffs.
+  Respuesta: { success: true } (200) | { error } (500).
+
+POST /api/conversations/[phone]/close
+  Reactiva la IA para ese cliente.
+  Body: ninguno requerido.
+  Efecto: DELETE handoffs del cell + UPDATE conversations status=ai,
+  limpia operador y timestamps.
+  Respuesta: { success: true } (200) | { error } (500).
+
+POST /api/conversations/[phone]/archive
+  Cierra/archiva la conversación.
+  Body: ninguno requerido.
+  Efecto: DELETE handoffs del cell + UPDATE conversations status=closed.
+  Respuesta: { success: true } (200) | { error } (500).
+
+POST /api/conversations/[phone]/reply
+  Envía una respuesta como operador humano.
+  Body: { message, operator_name? }
+  Validaciones: message no vacío, máx 4096 caracteres.
+  Efecto: guarda en `messages` (role="human", operator_name) + envía por
+  WhatsApp Cloud API (fire-and-forget).
+  Respuesta: { success: true } (200) | { error } (400/500).
+
+PATCH /api/conversations/[phone]/read
+  Marca la conversación como leída.
+  Body: ninguno.
+  Efecto: UPDATE conversations unread_count=0.
+  Respuesta: { success: true } (200) | { error } (500).
+
+--------------------------------------------------------------------------------
+9.4 DASHBOARD — Stock
+--------------------------------------------------------------------------------
+PATCH /api/ingredientes/[id]
+  Body: { available: boolean }
+  Respuesta: { success: true } (200) | { error } (400/500).
+
+PATCH /api/combos/[name]
+  Body: { available: boolean }
+  Respuesta: { success: true } (200) | { error } (400/500).
+
+--------------------------------------------------------------------------------
+9.5 DASHBOARD — Config
+--------------------------------------------------------------------------------
+PUT /api/config
+  Body: { key, value }
+  Validaciones: key ∈ {wait_time_pickup, wait_time_delivery}; value
+  numérico, 1–240.
+  Respuesta: { success: true } (200) | { error } (400/500).
+
+--------------------------------------------------------------------------------
+9.6 DASHBOARD — Cron
+--------------------------------------------------------------------------------
+GET /api/cron/reset-conversations
+  Protegido por header `x-cron-secret` (comparado contra CRON_SECRET).
+  Efecto: UPDATE masivo de conversations (status human_requested/
+  human_active → ai, limpia operador/timestamps) + DELETE masivo de
+  handoffs.
+  Respuesta: { success: true, reset: <cantidad>, timestamp } (200) |
+  { error: "Unauthorized" } (401) | { error } (500).
+  Invocado exclusivamente por el cron job de Vercel definido en
+  vercel.json (`59 2 * * *` UTC = 23:59 Argentina).
+
+
+================================================================================
+14. FUNCIONALIDADES IMPLEMENTADAS (checklist)
+================================================================================
+
+✓ Recepción de mensajes de WhatsApp (texto y audio, con transcripción
+  automática vía Groq Whisper)
+✓ Bienvenida diaria automática personalizada (con/sin nombre conocido)
+✓ Toma de pedidos conversacional vía IA (Claude Haiku 4.5, con fallback en
+  cascada a 2 modelos gratuitos si falla)
+✓ Cálculo automático de precios (tamaños, ingredientes extra, papas
+  incluidas vs. porción extra)
+✓ Sistema de equivalencias de combos (evita cobrar de más cuando una
+  combinación de ingredientes coincide con otro producto del menú)
+✓ Validación de stock en tiempo real por ingrediente individual, con
+  disponibilidad de combos derivada automáticamente
+✓ Creación automática de pedidos (ORDER_DATA) con detección de "pedido
+  nuevo" vs. "actualización del pedido activo"
+✓ Detección y conversión de horarios coloquiales argentinos (siempre
+  nocturnos, validados en la ventana 20:00–23:00)
+✓ Detección temprana del nombre del cliente (sin esperar a que el pedido
+  esté completo)
+✓ Cancelación de pedidos por el cliente vía chat (con confirmación
+  explícita, y derivación a humano si hay ambigüedad entre varios pedidos)
+✓ Cancelación de pedidos desde el dashboard (con notificación automática
+  al cliente por WhatsApp)
+✓ Gestión de stock de ingredientes y productos desde el dashboard (toggle
+  manual + bloqueo automático derivado del stock)
+✓ Configuración de tiempos de espera (retiro/delivery) editable sin
+  redeploy
+✓ Kanban de pedidos en tiempo real con drag&drop, 5 columnas de estado,
+  indicadores visuales de "nuevo pedido" y "pedido actualizado por el
+  cliente"
+✓ Creación y edición manual completa de pedidos desde el dashboard
+✓ Dashboard de métricas (KPIs del día en vivo + analíticas de 30 días con
+  gráficos)
+✓ Sistema completo de conversaciones humanas (handoff IA ↔ humano)
+✓ 4 estados de conversación (ai/human_requested/human_active/closed) con
+  triggers SQL que los mantienen sincronizados automáticamente
+✓ Tomar, liberar, reactivar IA y cerrar conversaciones desde el dashboard,
+  cada acción con confirmación visual antes de ejecutarse
+✓ Respuesta de operador humano enviada directamente por WhatsApp desde el
+  dashboard
+✓ Ficha operativa de cliente (datos de contacto/estado, pedido actual
+  completo de cualquier estado, historial de hasta 5 pedidos anteriores)
+✓ Notificaciones sonoras diferenciadas (atención humana urgente vs.
+  mensaje nuevo vs. nuevo pedido en Pedidos), con desbloqueo de
+  AudioContext en el primer click del operador (política de autoplay del
+  navegador)
+✓ Badge dinámico de conversaciones pendientes en la navegación lateral,
+  actualizado en tiempo real desde cualquier pantalla del dashboard
+✓ Reactivación automática nocturna de todas las conversaciones humanas
+  (cron diario a las 23:59 hora Argentina)
+✓ Layout responsive completo: desktop 3 columnas, tablet 2 columnas + panel
+  colapsable, mobile navegación por pantallas independientes
+✓ Tema claro/oscuro con persistencia en localStorage y aplicación sin
+  parpadeo en el primer render
+✓ Capa de seguridad: todas las escrituras iniciadas desde el navegador
+  pasan por API routes server-side con Service Role Key — ninguna
+  escritura privilegiada queda autenticada solo con la anon key pública
+
+

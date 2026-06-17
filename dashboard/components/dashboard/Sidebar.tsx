@@ -3,10 +3,11 @@
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, MessageSquare, Package, BarChart3, Beef, Sun, Moon, ExternalLink, X } from "lucide-react";
+import { LayoutDashboard, MessageSquare, Package, BarChart3, Sun, Moon, ExternalLink, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/components/providers/ThemeProvider";
 import { useSidebar } from "@/components/providers/ShellLayout";
+import { useConvCounts } from "@/context/ConvCountContext";
 
 const NAV = [
   { href: "/",              label: "Pedidos",        icon: LayoutDashboard },
@@ -21,6 +22,7 @@ export function Sidebar() {
   const pathname = usePathname();
   const { theme, toggleTheme } = useTheme();
   const { isOpen, close } = useSidebar();
+  const { humanRequested, humanActive } = useConvCounts();
   const isDark = theme === "dark";
 
   return (
@@ -70,6 +72,7 @@ export function Sidebar() {
         <nav className="flex-1 px-2 py-3 space-y-0.5 overflow-y-auto">
           {NAV.map(({ href, label, icon: Icon }) => {
             const active = href === "/" ? pathname === "/" : pathname.startsWith(href);
+            const isConv = href === "/conversations";
             return (
               <Link
                 key={href}
@@ -83,7 +86,21 @@ export function Sidebar() {
                 )}
               >
                 <Icon className="w-4 h-4 shrink-0" />
-                {label}
+                <span className="flex-1">{label}</span>
+                {isConv && (humanRequested > 0 || humanActive > 0) && (
+                  <span className="flex items-center gap-0.5">
+                    {humanRequested > 0 && (
+                      <span className="min-w-[18px] h-4 px-1 rounded-full text-[10px] font-bold bg-red-500 text-white flex items-center justify-center tabular-nums">
+                        {humanRequested > 99 ? "99+" : humanRequested}
+                      </span>
+                    )}
+                    {humanActive > 0 && (
+                      <span className="min-w-[18px] h-4 px-1 rounded-full text-[10px] font-bold bg-blue-500 text-white flex items-center justify-center tabular-nums">
+                        {humanActive > 99 ? "99+" : humanActive}
+                      </span>
+                    )}
+                  </span>
+                )}
               </Link>
             );
           })}

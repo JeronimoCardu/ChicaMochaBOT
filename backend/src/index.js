@@ -3,7 +3,7 @@ dotenv.config();
 import express from "express";
 import cors from "cors";
 import webhookRoutes from "./routes/webhook.js";
-
+import apiRoutes from "./routes/api.js";
 
 const app = express();
 
@@ -11,6 +11,7 @@ app.use(cors());
 app.use(express.json());
 
 app.use("/webhook", webhookRoutes);
+app.use("/api",     apiRoutes);
 
 app.get("/", (req, res) => {
   res.send("CHICA MOCHA API");

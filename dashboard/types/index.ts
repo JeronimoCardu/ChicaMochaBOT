@@ -10,7 +10,8 @@ export type OrderState =
   | "sent"
   | "delivered"
   | "cancelled";
-export type MessageRole = "user" | "assistant";
+export type MessageRole = "user" | "assistant" | "human";
+export type ConversationStatus = "ai" | "human_requested" | "human_active" | "closed";
 
 export interface PedidoItem {
   product_name: string;
@@ -50,7 +51,26 @@ export interface Message {
   phone: string;
   role: MessageRole;
   content: string;
+  operator_name?: string | null;
+  media_url?: string | null;
+  media_type?: string | null;
+  is_receipt?: boolean | null;
   created_at: string;
+}
+
+export interface HumanConversation {
+  id: string;
+  phone: string;
+  client_name: string | null;
+  status: ConversationStatus;
+  last_message: string | null;
+  last_message_at: string | null;
+  unread_count: number;
+  assigned_operator: string | null;
+  human_requested_at: string | null;
+  human_taken_at: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface Ingrediente {
@@ -79,15 +99,6 @@ export interface KPIData {
   transferRevenue: number;
   orderCount: number;
   burgerCount: number;
-}
-
-export interface Conversation {
-  phone: string;
-  lastMessage: string;
-  lastRole: MessageRole;
-  lastActivity: string;
-  activePedido: Pedido | null;
-  inHandoff: boolean;
 }
 
 export interface DailyStat {
