@@ -14,17 +14,33 @@ export async function getHistory(phone, limit = 20) {
   return (data || []).reverse();
 }
 
+/**
+ * extras: {
+ *   mediaUrl?:      string   – public Storage URL
+ *   mediaType?:     string   – "audio" | "image" | "document" | "video"
+ *   mediaMimeType?: string   – original MIME type from WhatsApp
+ *   transcription?: string   – Groq Whisper result (audio only)
+ *   isPaymentProof?:boolean  – heuristic comprobante flag
+ * }
+ */
 export async function saveMessage(phone, role, content, extras = {}) {
   const record = { phone, role, content };
-  if (extras.mediaUrl)              record.media_url  = extras.mediaUrl;
-  if (extras.mediaType)             record.media_type = extras.mediaType;
-  if (extras.isReceipt !== undefined) record.is_receipt = extras.isReceipt;
+
+  if (extras.mediaUrl       != null) record.media_url       = extras.mediaUrl;
+  if (extras.mediaType      != null) record.media_type      = extras.mediaType;
+  if (extras.mediaMimeType  != null) record.media_mime_type = extras.mediaMimeType;
+  if (extras.transcription  != null) record.transcription   = extras.transcription;
+  if (extras.isPaymentProof != null) record.is_payment_proof = extras.isPaymentProof;
 
   const { error } = await supabase.from("messages").insert(record);
   if (error) throw error;
 }
 
-export async function isLikelyReceipt(phone) {
+/**
+ * Returns true if any of the 3 most recent user messages from this phone
+ * (in the last 10 min) mention a bank transfer / payment confirmation.
+ */
+export async function isLikelyPaymentProof(phone) {
   const since = new Date(Date.now() - 10 * 60 * 1000).toISOString();
   const { data } = await supabase
     .from("messages")
@@ -35,6 +51,9 @@ export async function isLikelyReceipt(phone) {
     .order("created_at", { ascending: false })
     .limit(3);
 
-  const receiptWords = /comprobante|transferencia|transfer[ií]|adjunto|te mand[eé]|te envi[eé]|ya pagu[eé]|pagué|pagu[eé]|listo\s*pag/i;
-  return (data || []).some((m) => receiptWords.test(m.content));
+  const re = /comprobante|transferencia|transfer[ií]|adjunto|te mand[eé]|te envi[eé]|ya pagu[eé]|pagué|pagu[eé]|listo\s*pag/i;
+  return (data || []).some((m) => re.test(m.content));
 }
+
+// Keep old name for backward compat within this session
+export { isLikelyPaymentProof as isLikelyReceipt };

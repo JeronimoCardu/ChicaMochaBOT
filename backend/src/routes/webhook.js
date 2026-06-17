@@ -2,7 +2,7 @@ import express from "express";
 import { askAI } from "../ai/openrouter.js";
 import { sendWhatsAppMessage } from "../services/whatsapp.js";
 import { transcribeAudio, downloadWhatsAppMedia, transcribeBuffer } from "../services/transcription.js";
-import { getHistory, saveMessage, isLikelyReceipt } from "../db/messages.js";
+import { getHistory, saveMessage, isLikelyPaymentProof } from "../db/messages.js";
 import { uploadMedia } from "../lib/storage.js";
 import { getMenuContext, getComboAvailability } from "../db/combos.js";
 import { upsertPedido, getActivePedido, getCancelablePedidos, cancelPedido } from "../db/pedidos.js";
@@ -71,77 +71,125 @@ router.post("/", async (req, res) => {
 
   const from = message.from;
 
-  // Skip if phone is in handoff mode (24h)
+  // ── Mensajes en handoff: guardar todo, sin respuesta automática ─────────────
   if (await isInHandoff(from)) {
     console.log(`🤝 ${from} en handoff — tipo: ${message.type}`);
 
-    // ── Audio: transcribir + guardar en Storage ──────────────────────────────
+    // ── AUDIO ─────────────────────────────────────────────────────────────────
     if (message.type === "audio") {
       const mediaId  = message.audio?.id;
       const mimeType = message.audio?.mime_type || "audio/ogg";
-      let mediaUrl = null, transcription = null;
+      let buffer = null, mediaUrl = null, transcription = null;
 
       try {
-        const buffer = await downloadWhatsAppMedia(mediaId);
+        buffer = await downloadWhatsAppMedia(mediaId);
+        console.log(`📥 [handoff] Audio descargado (${buffer.length} bytes)`);
+      } catch (e) {
+        const code = e.response?.data?.error?.code;
+        console.error(`❌ [handoff] Error al descargar audio de Meta (code ${code ?? "?"}):`, e.message);
+      }
 
+      if (buffer) {
         try {
           mediaUrl = await uploadMedia(buffer, from, mediaId, mimeType);
+          console.log(`☁️  [handoff] Audio subido a Storage: ${mediaUrl}`);
         } catch (e) {
           console.error("❌ [handoff] Error al subir audio a Storage:", e.message);
         }
 
         try {
           transcription = await transcribeBuffer(buffer, mimeType);
+          console.log(`📝 [handoff] Transcripción: ${transcription?.slice(0, 80)}`);
         } catch (e) {
           console.error("❌ [handoff] Error al transcribir audio:", e.message);
         }
-      } catch (e) {
-        console.error("❌ [handoff] Error al descargar audio de Meta:", e.message);
       }
 
-      const content = transcription ? `🎤 ${transcription}` : "🎤 [audio no transcribible]";
-      console.log(`🎤 [handoff] Audio procesado — storage: ${mediaUrl ? "✅" : "❌"} | transcripción: ${transcription ? "✅" : "❌"}`);
-      saveMessage(from, "user", content, { mediaUrl, mediaType: "audio" })
-        .catch((e) => console.error("❌ [handoff] Error al guardar audio:", e.message));
+      const content = "🎤 Nota de voz";
+      saveMessage(from, "user", content, {
+        mediaUrl,
+        mediaType:    "audio",
+        mediaMimeType: mimeType,
+        transcription: transcription || null,
+      }).catch((e) => console.error("❌ [handoff] Error al guardar audio:", e.message));
       return;
     }
 
-    // ── Imagen: descargar + guardar en Storage + detectar comprobante ─────────
+    // ── IMAGEN ────────────────────────────────────────────────────────────────
     if (message.type === "image") {
       const mediaId  = message.image?.id;
       const mimeType = message.image?.mime_type || "image/jpeg";
-      let mediaUrl = null;
+      let buffer = null, mediaUrl = null;
 
       try {
-        const buffer = await downloadWhatsAppMedia(mediaId);
+        buffer = await downloadWhatsAppMedia(mediaId);
+        console.log(`📥 [handoff] Imagen descargada (${buffer.length} bytes)`);
+      } catch (e) {
+        const code = e.response?.data?.error?.code;
+        console.error(`❌ [handoff] Error al descargar imagen de Meta (code ${code ?? "?"}):`, e.message);
+      }
+
+      if (buffer) {
         try {
           mediaUrl = await uploadMedia(buffer, from, mediaId, mimeType);
+          console.log(`☁️  [handoff] Imagen subida a Storage: ${mediaUrl}`);
         } catch (e) {
           console.error("❌ [handoff] Error al subir imagen a Storage:", e.message);
         }
-      } catch (e) {
-        console.error("❌ [handoff] Error al descargar imagen de Meta:", e.message);
       }
 
-      const receipt = await isLikelyReceipt(from).catch(() => false);
-      if (receipt) console.log(`💳 [handoff] Posible comprobante de ${from}`);
+      const isPaymentProof = await isLikelyPaymentProof(from).catch(() => false);
+      if (isPaymentProof) console.log(`💳 [handoff] Posible comprobante de ${from}`);
 
-      const caption = message.image?.caption || "📷 [imagen]";
-      saveMessage(from, "user", caption, { mediaUrl, mediaType: "image", isReceipt: receipt })
-        .catch((e) => console.error("❌ [handoff] Error al guardar imagen:", e.message));
+      const caption = message.image?.caption || "📷 Imagen";
+      saveMessage(from, "user", caption, {
+        mediaUrl,
+        mediaType:      "image",
+        mediaMimeType:  mimeType,
+        isPaymentProof,
+      }).catch((e) => console.error("❌ [handoff] Error al guardar imagen:", e.message));
       return;
     }
 
-    // ── Resto de tipos ────────────────────────────────────────────────────────
+    // ── DOCUMENTO (PDF, Word, etc.) ───────────────────────────────────────────
+    if (message.type === "document") {
+      const mediaId  = message.document?.id;
+      const mimeType = message.document?.mime_type || "application/octet-stream";
+      const filename = message.document?.filename || "documento";
+      let buffer = null, mediaUrl = null;
+
+      try {
+        buffer = await downloadWhatsAppMedia(mediaId);
+        console.log(`📥 [handoff] Documento descargado: ${filename} (${buffer.length} bytes)`);
+      } catch (e) {
+        const code = e.response?.data?.error?.code;
+        console.error(`❌ [handoff] Error al descargar documento de Meta (code ${code ?? "?"}):`, e.message);
+      }
+
+      if (buffer) {
+        try {
+          mediaUrl = await uploadMedia(buffer, from, mediaId, mimeType);
+          console.log(`☁️  [handoff] Documento subido a Storage: ${mediaUrl}`);
+        } catch (e) {
+          console.error("❌ [handoff] Error al subir documento a Storage:", e.message);
+        }
+      }
+
+      saveMessage(from, "user", filename, {
+        mediaUrl,
+        mediaType:    "document",
+        mediaMimeType: mimeType,
+      }).catch((e) => console.error("❌ [handoff] Error al guardar documento:", e.message));
+      return;
+    }
+
+    // ── TEXTO y resto de tipos ────────────────────────────────────────────────
     let handoffContent = null;
 
     if (message.type === "text" && message.text?.body) {
       handoffContent = message.text.body;
     } else if (message.type === "video") {
       handoffContent = "🎥 [video]";
-    } else if (message.type === "document") {
-      const fname = message.document?.filename;
-      handoffContent = fname ? `📄 [documento: ${fname}]` : "📄 [documento]";
     } else if (message.type === "sticker") {
       handoffContent = "🎯 [sticker]";
     } else if (message.type === "location") {

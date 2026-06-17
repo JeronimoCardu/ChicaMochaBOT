@@ -54,7 +54,10 @@ export interface Message {
   operator_name?: string | null;
   media_url?: string | null;
   media_type?: string | null;
-  is_receipt?: boolean | null;
+  media_mime_type?: string | null;
+  transcription?: string | null;
+  is_payment_proof?: boolean | null;
+  is_receipt?: boolean | null;   // legacy — use is_payment_proof
   created_at: string;
 }
 
