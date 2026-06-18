@@ -114,11 +114,11 @@ export function ConvChat({ conversation, operatorName, onBack, onStatusChange, o
   return (
     <div className="flex flex-col h-full w-full min-w-0 flex-1 bg-[#0b141a]">
       {/* Header */}
-      <div className="flex items-center gap-3 px-4 py-3 bg-zinc-900 border-b border-zinc-800 shrink-0">
+      <div className="flex items-center gap-2 px-3 py-2.5 bg-zinc-900 border-b border-zinc-800 shrink-0">
         {onBack && (
           <button
             onClick={onBack}
-            className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-zinc-800 text-zinc-400 md:hidden"
+            className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-zinc-800 active:bg-zinc-700 text-zinc-400 md:hidden shrink-0"
           >
             <ArrowLeft className="w-4 h-4" />
           </button>
@@ -129,57 +129,72 @@ export function ConvChat({ conversation, operatorName, onBack, onStatusChange, o
           {(conversation.client_name?.[0] || "?").toUpperCase()}
         </div>
 
-        <div className="flex-1 min-w-0">
-          <p className="font-semibold text-zinc-100 text-sm truncate">
+        {/* Name + status */}
+        <div className="flex-1 min-w-0 overflow-hidden">
+          <p className="font-semibold text-zinc-100 text-sm truncate leading-tight">
             {conversation.client_name || formatPhone(conversation.phone)}
           </p>
-          <div className="flex items-center gap-2">
-            <p className="text-xs text-zinc-500">{formatPhone(conversation.phone)}</p>
+          <div className="flex items-center gap-1.5 mt-0.5 min-w-0 overflow-hidden">
             <ConvBadge status={conversation.status} />
+            {/* Phone shown only when there's a name (otherwise name IS the phone) */}
+            {conversation.client_name && (
+              <p className="text-xs text-zinc-500 truncate min-w-0">
+                {formatPhone(conversation.phone)}
+              </p>
+            )}
           </div>
         </div>
 
-        {/* Info toggle — visible on non-lg screens when panel is hidden */}
+        {/* Info toggle */}
         {onToggleInfo && (
           <button
             onClick={onToggleInfo}
-            className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-zinc-800 text-zinc-400 hover:text-zinc-200 transition-colors lg:hidden shrink-0"
+            className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-zinc-800 active:bg-zinc-700 text-zinc-400 hover:text-zinc-200 transition-colors lg:hidden shrink-0"
             title="Ver información del cliente"
           >
             <Info className="w-4 h-4" />
           </button>
         )}
 
-        {/* Action buttons */}
-        <div className="flex items-center gap-2 shrink-0">
+        {/* Action buttons — icon only on mobile, icon+text on sm+ */}
+        <div className="flex items-center gap-1.5 shrink-0">
           {conversation.status === "human_requested" && (
             <button
               onClick={handleTake}
               disabled={acting}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-lg disabled:opacity-60 transition-colors"
+              title="Tomar conversación"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white text-xs font-medium rounded-lg disabled:opacity-60 transition-colors"
             >
-              {acting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <UserCheck className="w-3.5 h-3.5" />}
-              Tomar conversación
+              {acting
+                ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                : <UserCheck className="w-3.5 h-3.5" />}
+              <span className="hidden sm:inline">Tomar</span>
             </button>
           )}
           {conversation.status === "ai" && (
             <button
               onClick={handleTake}
               disabled={acting}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-700 hover:bg-zinc-600 text-zinc-200 text-xs font-medium rounded-lg disabled:opacity-60 transition-colors"
+              title="Intervenir"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 bg-zinc-700 hover:bg-zinc-600 active:bg-zinc-500 text-zinc-200 text-xs font-medium rounded-lg disabled:opacity-60 transition-colors"
             >
-              {acting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <UserCheck className="w-3.5 h-3.5" />}
-              Intervenir
+              {acting
+                ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                : <UserCheck className="w-3.5 h-3.5" />}
+              <span className="hidden sm:inline">Intervenir</span>
             </button>
           )}
           {isHumanActive && (
             <button
               onClick={handleClose}
               disabled={acting}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-700 hover:bg-zinc-600 text-zinc-200 text-xs font-medium rounded-lg disabled:opacity-60 transition-colors"
+              title="Devolver a IA"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 bg-zinc-700 hover:bg-zinc-600 active:bg-zinc-500 text-zinc-200 text-xs font-medium rounded-lg disabled:opacity-60 transition-colors"
             >
-              {acting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Bot className="w-3.5 h-3.5" />}
-              Devolver a IA
+              {acting
+                ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                : <Bot className="w-3.5 h-3.5" />}
+              <span className="hidden sm:inline">Devolver a IA</span>
             </button>
           )}
         </div>
