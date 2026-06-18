@@ -1,13 +1,27 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { ArrowLeft, Loader2, UserCheck, Bot, Info, AlertTriangle, X } from "lucide-react";
 import { HumanConversation } from "@/types";
 import { useConversationMessages } from "@/hooks/useConversations";
+import { groupMessagesByDay } from "@/lib/convSearch";
 import { ConvBadge } from "./ConvBadge";
 import { ConvBubble } from "./ConvBubble";
 import { ConvInput } from "./ConvInput";
 import { formatPhone, cn } from "@/lib/utils";
+
+// ── Day separator ─────────────────────────────────────────────────────────────
+function DayDivider({ label }: { label: string }) {
+  return (
+    <div className="flex items-center gap-3 my-1 select-none" aria-hidden>
+      <div className="flex-1 h-px bg-zinc-800/70" />
+      <span className="text-[11px] text-zinc-500 font-medium whitespace-nowrap px-1">
+        {label}
+      </span>
+      <div className="flex-1 h-px bg-zinc-800/70" />
+    </div>
+  );
+}
 
 interface Props {
   conversation:    HumanConversation;
@@ -205,7 +219,12 @@ export function ConvChat({ conversation, operatorName, onBack, onStatusChange, o
             Sin mensajes
           </div>
         ) : (
-          messages.map((msg) => <ConvBubble key={msg.id} msg={msg} />)
+          groupMessagesByDay(messages).map(({ label, messages: group }) => (
+            <Fragment key={label}>
+              <DayDivider label={label} />
+              {group.map((msg) => <ConvBubble key={msg.id} msg={msg} />)}
+            </Fragment>
+          ))
         )}
         <div ref={bottomRef} />
       </div>
