@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, Loader2, UserCheck, Bot, Info, AlertTriangle, X } from "lucide-react";
 import { HumanConversation } from "@/types";
 import { useConversationMessages } from "@/hooks/useConversations";
@@ -107,8 +107,9 @@ export function ConvChat({ conversation, operatorName, onBack, onStatusChange, o
     }
   }
 
-  const canSend   = conversation.status === "human_active";
+  const canSend       = conversation.status === "human_active";
   const isHumanActive = conversation.status === "human_active";
+  const dayGroups     = useMemo(() => groupMessagesByDay(messages), [messages]);
 
   return (
     <div className="flex flex-col h-full w-full min-w-0 flex-1 bg-[#0b141a]">
@@ -219,7 +220,7 @@ export function ConvChat({ conversation, operatorName, onBack, onStatusChange, o
             Sin mensajes
           </div>
         ) : (
-          groupMessagesByDay(messages).map(({ label, messages: group }) => (
+          dayGroups.map(({ label, messages: group }) => (
             <Fragment key={label}>
               <DayDivider label={label} />
               {group.map((msg) => <ConvBubble key={msg.id} msg={msg} />)}
