@@ -32,11 +32,11 @@ function AudioBubble({ msg }: { msg: Message }) {
       <div className="text-xs leading-relaxed">
         {text ? (
           <>
-            <span className="text-zinc-500">Transcripción:</span>
-            <span className="ml-1 text-zinc-800 dark:text-zinc-200">"{text}"</span>
+            <span className="text-zinc-400">Transcripción:</span>
+            <span className="ml-1 text-zinc-200">"{text}"</span>
           </>
         ) : (
-          <span className="text-zinc-400 italic">No se pudo transcribir el audio.</span>
+          <span className="text-zinc-500 italic">No se pudo transcribir el audio.</span>
         )}
       </div>
     </div>
@@ -97,10 +97,10 @@ function DocumentBubble({ msg }: { msg: Message }) {
   })();
 
   return (
-    <div className="flex items-center gap-2.5 px-3 py-2 bg-zinc-50 dark:bg-zinc-700/50 border border-zinc-200 dark:border-zinc-600 rounded-xl max-w-[280px]">
+    <div className="flex items-center gap-2.5 px-3 py-2 bg-zinc-700/60 border border-zinc-600/50 rounded-xl max-w-[280px]">
       <FileText className="w-8 h-8 text-zinc-400 shrink-0" />
       <div className="flex flex-col gap-0.5 min-w-0 flex-1">
-        <p className="text-sm font-medium text-zinc-800 dark:text-zinc-200 truncate">{filename}</p>
+        <p className="text-sm font-medium text-zinc-200 truncate">{filename}</p>
         <p className="text-xs text-zinc-400">{msg.media_mime_type ?? "documento"}</p>
       </div>
       {msg.media_url && (
@@ -142,7 +142,7 @@ export function ConvBubble({ msg }: { msg: Message }) {
           <User className="w-3.5 h-3.5 text-zinc-400" />
         </div>
         <div className="flex flex-col gap-0.5">
-          <div className="bg-white dark:bg-zinc-100 text-zinc-900 px-3.5 py-2.5 rounded-2xl rounded-tl-sm max-w-[480px]">
+          <div className="bg-zinc-800 text-zinc-100 px-3.5 py-2.5 rounded-2xl rounded-tl-sm max-w-[480px]">
             <MessageContent msg={msg} />
           </div>
           <p className="text-xs text-zinc-500 pl-1">{formatTime(msg.created_at)}</p>
