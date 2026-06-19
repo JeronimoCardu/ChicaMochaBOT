@@ -9,6 +9,7 @@ export const COMBO_INGREDIENTES: Record<string, string[]> = {
   "Burga 7": ["lechuga", "tomate", "cebolla"],
   "Burga 8": ["salsa roja"],
   "Jhon": [],
+  "Papas": [],
 };
 
 export function deriveComboAvailability(

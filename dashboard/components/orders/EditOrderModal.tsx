@@ -42,6 +42,7 @@ const BURGAS_CON_CHEDDAR = new Set([
   "Burga 7",
   "Burga 8",
 ]);
+const PRODUCT_BASE_PRICE: Record<string, number> = { Papas: 2000 };
 
 const STATE_OPTIONS: { value: OrderState; label: string }[] = [
   { value: "pending", label: "Pendiente" },
@@ -67,16 +68,20 @@ function makeItem(): PedidoItem {
 
 function calcPreview(items: PedidoItem[]): number {
   return items.reduce((sum, item) => {
-    let sizeExtra: number;
-    if (item.product_name === "Jhon") {
-      sizeExtra =
-        item.size === "doble" ? 2000 : item.size === "triple" ? 4000 : 0;
-    } else {
-      sizeExtra =
-        item.size === "triple" ? 2000 : item.size === "cuádruple" ? 4000 : 0;
+    const isPapas = item.product_name === "Papas";
+    const basePrice = PRODUCT_BASE_PRICE[item.product_name] ?? 12000;
+    let sizeExtra = 0;
+    if (!isPapas) {
+      if (item.product_name === "Jhon") {
+        sizeExtra =
+          item.size === "doble" ? 2000 : item.size === "triple" ? 4000 : 0;
+      } else {
+        sizeExtra =
+          item.size === "triple" ? 2000 : item.size === "cuádruple" ? 4000 : 0;
+      }
     }
-    const extraIng = (item.extra_ingredients?.length ?? 0) * 2000;
-    return sum + (12000 + sizeExtra + extraIng) * (item.quantity ?? 1);
+    const extraIng = isPapas ? 0 : (item.extra_ingredients?.length ?? 0) * 2000;
+    return sum + (basePrice + sizeExtra + extraIng) * (item.quantity ?? 1);
   }, 0);
 }
 
@@ -90,6 +95,7 @@ function ItemEditor({
   onRemove: () => void;
 }) {
   const isJhon = item.product_name === "Jhon";
+  const isPapas = item.product_name === "Papas";
   const comboIngs = [
     ...(COMBO_INGREDIENTES[item.product_name] ?? []),
     ...(BURGAS_CON_CHEDDAR.has(item.product_name) ? ["cheddar"] : []),
@@ -160,17 +166,19 @@ function ItemEditor({
           </button>
         </div>
 
-        <select
-          value={item.size}
-          onChange={(e) => onChange({ size: e.target.value as BurgerSize })}
-          className="px-2 py-1.5 text-xs bg-white dark:bg-[#111111] border border-gray-200 dark:border-[#2a2a2a] rounded-lg text-gray-900 dark:text-white focus:outline-none capitalize"
-        >
-          {sizes.map((s) => (
-            <option key={s} value={s}>
-              {s}
-            </option>
-          ))}
-        </select>
+        {!isPapas && (
+          <select
+            value={item.size}
+            onChange={(e) => onChange({ size: e.target.value as BurgerSize })}
+            className="px-2 py-1.5 text-xs bg-white dark:bg-[#111111] border border-gray-200 dark:border-[#2a2a2a] rounded-lg text-gray-900 dark:text-white focus:outline-none capitalize"
+          >
+            {sizes.map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
+          </select>
+        )}
 
         <button
           type="button"
@@ -208,28 +216,30 @@ function ItemEditor({
       )}
 
       {/* Extras */}
-      <div>
-        <p className="text-xs text-gray-400 dark:text-zinc-600 mb-1.5">
-          Extras:
-        </p>
-        <div className="flex flex-wrap gap-1.5">
-          {extraCandidates.map((ing) => (
-            <button
-              key={ing}
-              type="button"
-              onClick={() => toggleExtra(ing)}
-              className={cn(
-                "text-xs px-2.5 py-1 rounded-full border transition-colors",
-                item.extra_ingredients.includes(ing)
-                  ? "bg-green-50 dark:bg-green-400/10 text-green-600 dark:text-green-400 border-green-200 dark:border-green-400/20"
-                  : "bg-white dark:bg-[#111111] text-gray-500 dark:text-zinc-500 border-gray-200 dark:border-[#2a2a2a] hover:border-green-200 dark:hover:border-green-400/20",
-              )}
-            >
-              +{ing}
-            </button>
-          ))}
+      {!isPapas && (
+        <div>
+          <p className="text-xs text-gray-400 dark:text-zinc-600 mb-1.5">
+            Extras:
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {extraCandidates.map((ing) => (
+              <button
+                key={ing}
+                type="button"
+                onClick={() => toggleExtra(ing)}
+                className={cn(
+                  "text-xs px-2.5 py-1 rounded-full border transition-colors",
+                  item.extra_ingredients.includes(ing)
+                    ? "bg-green-50 dark:bg-green-400/10 text-green-600 dark:text-green-400 border-green-200 dark:border-green-400/20"
+                    : "bg-white dark:bg-[#111111] text-gray-500 dark:text-zinc-500 border-gray-200 dark:border-[#2a2a2a] hover:border-green-200 dark:hover:border-green-400/20",
+                )}
+              >
+                +{ing}
+              </button>
+            ))}
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }
