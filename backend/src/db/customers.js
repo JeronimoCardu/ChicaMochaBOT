@@ -103,6 +103,24 @@ export async function clearPendingConfirmation(phone) {
   if (error) throw error;
 }
 
+// ─── Estado de confirmación de modificación de pedido ─────────────────────────
+
+export async function setPendingModification(phone, modificationData) {
+  const { error } = await supabase
+    .from("customers")
+    .update({ waiting_modification_confirmation: true, pending_modification_data: modificationData })
+    .eq("phone", phone);
+  if (error) throw error;
+}
+
+export async function clearPendingModification(phone) {
+  const { error } = await supabase
+    .from("customers")
+    .update({ waiting_modification_confirmation: false, pending_modification_data: null })
+    .eq("phone", phone);
+  if (error) throw error;
+}
+
 // ─── Mensajes de bienvenida ───────────────────────────────────────────────────
 
 const BODY = `Recordá que los pedidos pasan a la cocina una vez indicada la ORDEN, DIRECCIÓN Y APELLIDO.

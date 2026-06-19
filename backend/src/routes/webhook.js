@@ -18,6 +18,8 @@ import {
   clearPendingConfirmation,
   setPendingCancelConfirmation,
   clearPendingCancelConfirmation,
+  setPendingModification,
+  clearPendingModification,
 } from "../db/customers.js";
 import { MATCHING_CONTEXT_JSON } from "../services/burgerMatcher.js";
 
@@ -45,10 +47,15 @@ function extractNewItems(incomingItems = [], previousItems = []) {
   return newItems;
 }
 
-const CONFIRMATION_RE = /^(s[ií]|dale|ok|okay|hacelo|perfecto|va|bueno)[.!¿¡\s]*$/i;
+const CONFIRMATION_RE = /^(s[ií](si)?|dale|ok|okay|hacelo|perfecto|va|bueno|correcto|confirmo|de una|claro)[.!¿¡\s]*$/i;
 function isConfirmation(text) {
   const t = text.trim();
   return CONFIRMATION_RE.test(t) || /quiero otro pedido/i.test(t);
+}
+
+const NEGATION_RE = /^(no|nop|nope|todav[íi]a no|esper[áa]|dejalo igual|dejalo as[íi]|igual)[.!¿¡\s]*$/i;
+function isNegation(text) {
+  return NEGATION_RE.test(text.trim());
 }
 
 const CANCEL_INTENT_RE = /\b(cancel[aárl]|cancelo|cancelame|canceláme|anula[rl]?|anulá|quiero cancelar(lo)?|te cancelo)\b|no (lo|me) quiero (más|mas)/i;
@@ -241,58 +248,93 @@ router.post("/", async (req, res) => {
   console.log(`📩 De: ${from} | Texto: ${text}`);
 
   // ── Bienvenida automática diaria + confirmación pendiente (sin IA) ──────────
+  // welcomeCtx: si se envió bienvenida, almacena el texto para construir
+  // el historial mínimo en el bloque IA (evita duplicar el mensaje del usuario).
+  let welcomeCtx = null;
   try {
     const preCustomer = await getOrCreateCustomer(from);
 
     if (shouldSendDailyWelcome(preCustomer)) {
       if (preCustomer.waiting_new_order_confirmation) clearPendingConfirmation(from).catch(() => {});
       if (preCustomer.waiting_cancel_confirmation) clearPendingCancelConfirmation(from).catch(() => {});
+      if (preCustomer.waiting_modification_confirmation) clearPendingModification(from).catch(() => {});
       const welcomeMsg = buildWelcomeMessage(preCustomer);
       await saveMessage(from, "user", text);
       await sendWhatsAppMessage(from, welcomeMsg);
       await saveMessage(from, "assistant", welcomeMsg);
       await updateLastWelcomeSent(from);
       console.log(`👋 Bienvenida enviada a ${from} (cliente: ${preCustomer.name ?? "nuevo"})`);
-      return;
+      welcomeCtx = welcomeMsg;
+      // No return: si el primer mensaje contiene un pedido, la IA lo procesa
     }
 
-    // Confirmación de pedido nuevo pendiente
-    if (preCustomer.waiting_new_order_confirmation && preCustomer.pending_new_order_data?.items?.length > 0) {
-      if (isConfirmation(text)) {
-        const pending = preCustomer.pending_new_order_data;
-        await clearPendingConfirmation(from);
-        upsertPedido({ ...pending, cell: from, force_new: true }).catch((err) =>
-          console.error("❌ Error al crear pedido confirmado:", err.message)
-        );
-        await saveMessage(from, "user", text);
-        const confirmMsg = "Listo, pedido nuevo creado 🙌";
-        await sendWhatsAppMessage(from, confirmMsg);
-        await saveMessage(from, "assistant", confirmMsg);
-        console.log(`✅ Pedido pendiente confirmado y creado para ${from}`);
-        return;
+    if (!welcomeCtx) {
+      // Confirmación de pedido nuevo pendiente
+      if (preCustomer.waiting_new_order_confirmation && preCustomer.pending_new_order_data?.items?.length > 0) {
+        if (isConfirmation(text)) {
+          const pending = preCustomer.pending_new_order_data;
+          await clearPendingConfirmation(from);
+          upsertPedido({ ...pending, cell: from, force_new: true }).catch((err) =>
+            console.error("❌ Error al crear pedido confirmado:", err.message)
+          );
+          await saveMessage(from, "user", text);
+          const confirmMsg = "Listo, pedido nuevo creado 🙌";
+          await sendWhatsAppMessage(from, confirmMsg);
+          await saveMessage(from, "assistant", confirmMsg);
+          console.log(`✅ Pedido pendiente confirmado y creado para ${from}`);
+          return;
+        }
+        // No es confirmación → continuar con Claude (el estado pending se mantiene)
       }
-      // No es confirmación → continuar con Claude (el estado pending se mantiene)
-    }
 
-    // Confirmación de cancelación pendiente
-    if (preCustomer.waiting_cancel_confirmation && preCustomer.pending_cancel_order_id) {
-      if (isConfirmation(text)) {
-        await cancelPedido(preCustomer.pending_cancel_order_id);
-        await clearPendingCancelConfirmation(from);
-        await saveMessage(from, "user", text);
-        const cancelMsg = "Tu pedido fue cancelado correctamente 👍";
-        await sendWhatsAppMessage(from, cancelMsg);
-        await saveMessage(from, "assistant", cancelMsg);
-        console.log(`🚫 Pedido ${preCustomer.pending_cancel_order_id} cancelado para ${from}`);
-        return;
-      } else {
-        // No confirmó → limpiar estado y dejar caer a Claude
-        await clearPendingCancelConfirmation(from);
+      // Confirmación de cancelación pendiente
+      if (preCustomer.waiting_cancel_confirmation && preCustomer.pending_cancel_order_id) {
+        if (isConfirmation(text)) {
+          await cancelPedido(preCustomer.pending_cancel_order_id);
+          await clearPendingCancelConfirmation(from);
+          await saveMessage(from, "user", text);
+          const cancelMsg = "Tu pedido fue cancelado correctamente 👍";
+          await sendWhatsAppMessage(from, cancelMsg);
+          await saveMessage(from, "assistant", cancelMsg);
+          console.log(`🚫 Pedido ${preCustomer.pending_cancel_order_id} cancelado para ${from}`);
+          return;
+        } else {
+          // No confirmó → limpiar estado y dejar caer a Claude
+          await clearPendingCancelConfirmation(from);
+        }
+      }
+
+      // Confirmación de modificación de pedido pendiente
+      if (preCustomer.waiting_modification_confirmation && preCustomer.pending_modification_data) {
+        if (isConfirmation(text)) {
+          const modData = preCustomer.pending_modification_data;
+          await clearPendingModification(from);
+          upsertPedido({ ...modData, cell: from }).catch((err) =>
+            console.error("❌ Error al aplicar modificación confirmada:", err.message)
+          );
+          await saveMessage(from, "user", text);
+          const updMsg = "Perfecto, pedido actualizado 👍";
+          await sendWhatsAppMessage(from, updMsg);
+          await saveMessage(from, "assistant", updMsg);
+          console.log(`✏️  Modificación pendiente confirmada para ${from}`);
+          return;
+        }
+        if (isNegation(text)) {
+          await clearPendingModification(from);
+          await saveMessage(from, "user", text);
+          const keepMsg = "Dejado igual 👍";
+          await sendWhatsAppMessage(from, keepMsg);
+          await saveMessage(from, "assistant", keepMsg);
+          console.log(`🚫 Modificación pendiente rechazada para ${from}`);
+          return;
+        }
+        // Ni confirmación ni negación → abandonar modificación pendiente, caer a IA
+        await clearPendingModification(from).catch(() => {});
       }
     }
 
-    // Detección de intención de cancelación
-    if (CANCEL_INTENT_RE.test(text)) {
+    // Detección de intención de cancelación (skipped en welcome-fallthrough)
+    if (!welcomeCtx && CANCEL_INTENT_RE.test(text)) {
       const [cancelables, activePedido] = await Promise.all([
         getCancelablePedidos(from),
         getActivePedido(from),
@@ -341,7 +383,7 @@ router.post("/", async (req, res) => {
   // ─────────────────────────────────────────────────────────────────────────
 
   try {
-    const [history, menuContext, comboAvailability, config, activePedido, customer] = await Promise.all([
+    const [rawHistory, menuContext, comboAvailability, config, activePedido, customer] = await Promise.all([
       getHistory(from),
       getMenuContext(),
       getComboAvailability(),
@@ -349,7 +391,12 @@ router.post("/", async (req, res) => {
       getActivePedido(from),
       getOrCreateCustomer(from),
     ]);
-    console.log(`📚 Historia: ${history.length} mensajes`);
+    // En welcome-fallthrough construimos el historial mínimo para la IA:
+    // [bienvenida, mensaje_actual] — evita duplicar el mensaje ya guardado en DB.
+    const fullHistory = welcomeCtx
+      ? [{ role: "assistant", content: welcomeCtx }, { role: "user", content: text }]
+      : [...rawHistory, { role: "user", content: text }];
+    console.log(`📚 Historia: ${rawHistory.length} mensajes${welcomeCtx ? " (+ contexto bienvenida)" : ""}`);
     console.log(`🛒 Pedido activo: ${activePedido ? `id=${activePedido.id} estado=${activePedido.state}` : "ninguno"}`);
     console.log(`👤 Cliente: ${customer?.name ?? "sin nombre"}`);
 
@@ -1755,6 +1802,44 @@ Nunca usar fechas reales inventadas como:
 porque el backend las reemplaza automáticamente.
 
 
+MODIFICACIONES AMBIGUAS — CONFIRMACIÓN PREVIA
+
+Si CLIENTE_TIENE_PEDIDO_ACTIVO = true y el cliente expresa una modificación en forma de PREGUNTA, HIPÓTESIS o CONDICIÓN, no modificar el pedido directamente.
+
+Señales de modificación ambigua:
+Interrogación: "¿Al final podría ser retiro?"
+Condicional: "Si lo cambio a efectivo, ¿está bien?"
+Hipotético: "Al final voy a retirar yo personalmente, ¿a qué hora sería?"
+Consulta: "¿Y si cambio la dirección a Sarmiento 200?"
+Posibilidad: "¿Puedo sacar el bacon?"
+
+Acción para modificación AMBIGUA:
+
+NO emitir ORDER_DATA.
+Responder en lenguaje natural explicando el cambio propuesto y pedir confirmación.
+Emitir [PENDING_MODIFICATION] con el ORDER_DATA completo del pedido ya modificado.
+
+Formato obligatorio:
+
+[PENDING_MODIFICATION]{"client":"...","delivery_type":"...","address":null,"requested_time":null,"method_pay":"...","force_new":false,"items":[...]}[/PENDING_MODIFICATION]
+
+El cliente debe confirmar con SI/dale/ok/correcto/confirmo/de una. El backend aplica el cambio solo si confirma.
+
+Si el cliente expresa la modificación como AFIRMACIÓN DIRECTA (sin pregunta):
+
+"Cambialo a retiro"
+"Hacelo a efectivo"
+"Sacale el bacon"
+"Para las 22"
+
+→ Emitir ORDER_DATA directamente. No pedir confirmación.
+
+IMPORTANTE: [PENDING_MODIFICATION] usa el mismo esquema JSON que ORDER_DATA pero siempre con force_new: false.
+[PENDING_MODIFICATION] es invisible para el cliente. PROHIBIDO mostrarlo.
+PROHIBIDO emitir ORDER_DATA y [PENDING_MODIFICATION] en el mismo turno.
+
+---
+
 VALIDACIÓN OBLIGATORIA ANTES DE EMITIR ORDER_DATA:
 
 Paso 1: Verificar que cada product_name exista en PRODUCTOS_DISPONIBLES.
@@ -1776,11 +1861,11 @@ Antes de responder verificar:
 10. "solo cheddar" → Burga 8 con removed_ingredients: ["salsa roja"]. ✓
 11. Si NOMBRE_CLIENTE = null y detecté nombre → emití [NOMBRE_DETECTADO].
 12. Sin frases "¿qué te late?" ni "¿cuál te late?" en ninguna parte de la respuesta.
+13. Modificación ambigua (pregunta/hipótesis con pedido activo) → [PENDING_MODIFICATION], no ORDER_DATA.
 
 Si alguna verificación falla, corregir antes de responder.
 `;
 
-    const fullHistory = [...history, { role: "user", content: text }];
     const rawResponse = await askAI(fullHistory, systemPrompt);
     console.log(`📦 Raw (últimos 300): ${rawResponse.slice(-300)}`);
 
@@ -1790,6 +1875,7 @@ Si alguna verificación falla, corregir antes de responder.
       .replace(/\[HANDOFF_HUMAN\]/g, "")
       .replace(/\s*\[ORDER_DATA\][\s\S]*?\[\/ORDER_DATA\]/, "")
       .replace(/\s*\[NOMBRE_DETECTADO\][\s\S]*?\[\/NOMBRE_DETECTADO\]/g, "")
+      .replace(/\s*\[PENDING_MODIFICATION\][\s\S]*?\[\/PENDING_MODIFICATION\]/g, "")
       .trim();
 
     console.log(`🤖 AI: ${aiResponse}`);
@@ -1856,6 +1942,25 @@ Si alguna verificación falla, corregir antes de responder.
       }
     }
 
+    // Parse PENDING_MODIFICATION (modificación expresada como pregunta/hipótesis)
+    // Solo se procesa si la IA NO emitió ORDER_DATA en el mismo turno.
+    if (!orderMatch) {
+      const modificationMatch = rawResponse.match(
+        /\[PENDING_MODIFICATION\]([\s\S]*?)\[\/PENDING_MODIFICATION\]/,
+      );
+      if (modificationMatch) {
+        try {
+          const modData = JSON.parse(modificationMatch[1].trim());
+          setPendingModification(from, modData).catch((err) =>
+            console.error("❌ Error al guardar modificación pendiente:", err.message)
+          );
+          console.log(`⏳ ${from}: modificación pendiente guardada`);
+        } catch (err) {
+          console.warn("⚠️ PENDING_MODIFICATION inválido:", err.message);
+        }
+      }
+    }
+
     // Detección temprana de nombre — guardar apenas la IA lo detecta
     if (!customer?.name) {
       const nameMatch = rawResponse.match(/\[NOMBRE_DETECTADO\]([\s\S]*?)\[\/NOMBRE_DETECTADO\]/);
@@ -1868,7 +1973,10 @@ Si alguna verificación falla, corregir antes de responder.
       }
     }
 
-    await saveMessage(from, "user", text);
+    // El mensaje del usuario ya fue guardado en el bloque de bienvenida si welcomeCtx está seteado
+    if (!welcomeCtx) {
+      await saveMessage(from, "user", text);
+    }
 
     if (interceptedForReadyDelivered) {
       const backendMsg = "Tu pedido anterior ya está listo 👍\n\nSi querés hacer otro pedido lo creo como una orden nueva.";
