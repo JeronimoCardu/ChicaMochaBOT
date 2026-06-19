@@ -37,9 +37,6 @@ export async function transcribeBuffer(buffer, mimeType = "audio/ogg") {
 }
 
 export async function transcribeAudio(mediaId, mimeType = "audio/ogg") {
-  console.log(`🎤 Transcribiendo audio: ${mediaId}`);
   const buffer = await downloadWhatsAppMedia(mediaId);
-  const text   = await transcribeBuffer(buffer, mimeType);
-  console.log(`📝 Transcripción: ${text}`);
-  return text;
+  return transcribeBuffer(buffer, mimeType);
 }

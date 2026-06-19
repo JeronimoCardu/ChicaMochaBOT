@@ -4,9 +4,10 @@ import { createServerClient } from "@/lib/supabase-server";
 // Cron: diariamente a las 23:59 hora Argentina (02:59 UTC del día siguiente)
 // Vercel cron schedule: "59 2 * * *"
 export async function GET(req: NextRequest) {
-  const secret   = req.headers.get("x-cron-secret");
-  const expected = process.env.CRON_SECRET;
-  if (expected && secret !== expected) {
+  // Vercel envía Authorization: Bearer <CRON_SECRET> en cron jobs
+  const authHeader = req.headers.get("authorization");
+  const expected   = process.env.CRON_SECRET;
+  if (!expected || authHeader !== `Bearer ${expected}`) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

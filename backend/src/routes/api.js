@@ -29,7 +29,6 @@ router.post("/send", verifyInternalKey, async (req, res) => {
 
   try {
     await sendWhatsAppMessage(to, message.trim());
-    console.log(`✅ [API] Mensaje enviado a ${to}: "${message.slice(0, 60)}"`);
     return res.json({ success: true });
   } catch (err) {
     const detail = err.response?.data ?? err.message;

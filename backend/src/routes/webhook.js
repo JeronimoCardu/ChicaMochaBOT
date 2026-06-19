@@ -1,4 +1,5 @@
 import express from "express";
+import crypto from "crypto";
 import { askAI } from "../ai/openrouter.js";
 import { sendWhatsAppMessage } from "../services/whatsapp.js";
 import { transcribeAudio, downloadWhatsAppMedia, transcribeBuffer } from "../services/transcription.js";
@@ -24,6 +25,34 @@ import {
 import { MATCHING_CONTEXT_JSON } from "../services/burgerMatcher.js";
 
 const router = express.Router();
+
+// ── Verificación de firma Meta (X-Hub-Signature-256) ─────────────────────────
+function verifyWebhookSignature(req) {
+  const signature = req.headers["x-hub-signature-256"];
+  if (!signature) return false;
+  const expected =
+    "sha256=" +
+    crypto
+      .createHmac("sha256", process.env.WEBHOOK_APP_SECRET)
+      .update(req.rawBody ?? Buffer.from(JSON.stringify(req.body)))
+      .digest("hex");
+  try {
+    return crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected));
+  } catch {
+    return false;
+  }
+}
+
+// ── Deduplicación de webhooks (Meta puede reenviar el mismo mensaje) ──────────
+const processedMessageIds = new Set();
+function isDuplicate(messageId) {
+  if (!messageId) return false;
+  if (processedMessageIds.has(messageId)) return true;
+  processedMessageIds.add(messageId);
+  // TTL: limpiar después de 10 minutos
+  setTimeout(() => processedMessageIds.delete(messageId), 10 * 60 * 1000);
+  return false;
+}
 
 function extractNewItems(incomingItems = [], previousItems = []) {
   const prevCounts = {};
@@ -71,16 +100,22 @@ router.get("/", (req, res) => {
 });
 
 router.post("/", async (req, res) => {
+  if (!verifyWebhookSignature(req)) {
+    console.warn("⚠️ Webhook: firma inválida rechazada");
+    return res.sendStatus(403);
+  }
+
   res.sendStatus(200);
 
   const message = req.body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
   if (!message) return;
 
+  if (isDuplicate(message.id)) return;
+
   const from = message.from;
 
   // ── Mensajes en handoff: guardar todo, sin respuesta automática ─────────────
   if (await isInHandoff(from)) {
-    console.log(`🤝 ${from} en handoff — tipo: ${message.type}`);
 
     // ── AUDIO ─────────────────────────────────────────────────────────────────
     if (message.type === "audio") {
@@ -90,7 +125,6 @@ router.post("/", async (req, res) => {
 
       try {
         buffer = await downloadWhatsAppMedia(mediaId);
-        console.log(`📥 [handoff] Audio descargado (${buffer.length} bytes)`);
       } catch (e) {
         const code = e.response?.data?.error?.code;
         console.error(`❌ [handoff] Error al descargar audio de Meta (code ${code ?? "?"}):`, e.message);
@@ -99,14 +133,12 @@ router.post("/", async (req, res) => {
       if (buffer) {
         try {
           mediaUrl = await uploadMedia(buffer, from, mediaId, mimeType);
-          console.log(`☁️  [handoff] Audio subido a Storage: ${mediaUrl}`);
         } catch (e) {
           console.error("❌ [handoff] Error al subir audio a Storage:", e.message);
         }
 
         try {
           transcription = await transcribeBuffer(buffer, mimeType);
-          console.log(`📝 [handoff] Transcripción: ${transcription?.slice(0, 80)}`);
         } catch (e) {
           console.error("❌ [handoff] Error al transcribir audio:", e.message);
         }
@@ -130,7 +162,6 @@ router.post("/", async (req, res) => {
 
       try {
         buffer = await downloadWhatsAppMedia(mediaId);
-        console.log(`📥 [handoff] Imagen descargada (${buffer.length} bytes)`);
       } catch (e) {
         const code = e.response?.data?.error?.code;
         console.error(`❌ [handoff] Error al descargar imagen de Meta (code ${code ?? "?"}):`, e.message);
@@ -139,14 +170,12 @@ router.post("/", async (req, res) => {
       if (buffer) {
         try {
           mediaUrl = await uploadMedia(buffer, from, mediaId, mimeType);
-          console.log(`☁️  [handoff] Imagen subida a Storage: ${mediaUrl}`);
         } catch (e) {
           console.error("❌ [handoff] Error al subir imagen a Storage:", e.message);
         }
       }
 
       const isPaymentProof = await isLikelyPaymentProof(from).catch(() => false);
-      if (isPaymentProof) console.log(`💳 [handoff] Posible comprobante de ${from}`);
 
       const caption = message.image?.caption || "📷 Imagen";
       saveMessage(from, "user", caption, {
@@ -167,7 +196,6 @@ router.post("/", async (req, res) => {
 
       try {
         buffer = await downloadWhatsAppMedia(mediaId);
-        console.log(`📥 [handoff] Documento descargado: ${filename} (${buffer.length} bytes)`);
       } catch (e) {
         const code = e.response?.data?.error?.code;
         console.error(`❌ [handoff] Error al descargar documento de Meta (code ${code ?? "?"}):`, e.message);
@@ -176,7 +204,6 @@ router.post("/", async (req, res) => {
       if (buffer) {
         try {
           mediaUrl = await uploadMedia(buffer, from, mediaId, mimeType);
-          console.log(`☁️  [handoff] Documento subido a Storage: ${mediaUrl}`);
         } catch (e) {
           console.error("❌ [handoff] Error al subir documento a Storage:", e.message);
         }
@@ -241,11 +268,8 @@ router.post("/", async (req, res) => {
       return;
     }
   } else {
-    console.log("⚠️ Tipo no soportado:", message.type);
     return;
   }
-
-  console.log(`📩 De: ${from} | Texto: ${text}`);
 
   // ── Bienvenida automática diaria + confirmación pendiente (sin IA) ──────────
   // welcomeCtx: si se envió bienvenida, almacena el texto para construir
@@ -263,7 +287,7 @@ router.post("/", async (req, res) => {
       await sendWhatsAppMessage(from, welcomeMsg);
       await saveMessage(from, "assistant", welcomeMsg);
       await updateLastWelcomeSent(from);
-      console.log(`👋 Bienvenida enviada a ${from} (cliente: ${preCustomer.name ?? "nuevo"})`);
+      console.log("👋 Bienvenida diaria enviada");
       welcomeCtx = welcomeMsg;
       // No return: si el primer mensaje contiene un pedido, la IA lo procesa
     }
@@ -281,7 +305,6 @@ router.post("/", async (req, res) => {
           const confirmMsg = "Listo, pedido nuevo creado 🙌";
           await sendWhatsAppMessage(from, confirmMsg);
           await saveMessage(from, "assistant", confirmMsg);
-          console.log(`✅ Pedido pendiente confirmado y creado para ${from}`);
           return;
         }
         // No es confirmación → continuar con Claude (el estado pending se mantiene)
@@ -296,7 +319,6 @@ router.post("/", async (req, res) => {
           const cancelMsg = "Tu pedido fue cancelado correctamente 👍";
           await sendWhatsAppMessage(from, cancelMsg);
           await saveMessage(from, "assistant", cancelMsg);
-          console.log(`🚫 Pedido ${preCustomer.pending_cancel_order_id} cancelado para ${from}`);
           return;
         } else {
           // No confirmó → limpiar estado y dejar caer a Claude
@@ -316,7 +338,6 @@ router.post("/", async (req, res) => {
           const updMsg = "Perfecto, pedido actualizado 👍";
           await sendWhatsAppMessage(from, updMsg);
           await saveMessage(from, "assistant", updMsg);
-          console.log(`✏️  Modificación pendiente confirmada para ${from}`);
           return;
         }
         if (isNegation(text)) {
@@ -325,7 +346,6 @@ router.post("/", async (req, res) => {
           const keepMsg = "Dejado igual 👍";
           await sendWhatsAppMessage(from, keepMsg);
           await saveMessage(from, "assistant", keepMsg);
-          console.log(`🚫 Modificación pendiente rechazada para ${from}`);
           return;
         }
         // Ni confirmación ni negación → abandonar modificación pendiente, caer a IA
@@ -359,7 +379,7 @@ router.post("/", async (req, res) => {
         await sendWhatsAppMessage(from, msg);
         await saveMessage(from, "assistant", msg);
         await saveHandoff(from).catch(() => {});
-        console.log(`🤝 Handoff activado por múltiples pedidos para ${from}`);
+        console.log("🤝 Handoff activado — múltiples pedidos activos");
         return;
       }
 
@@ -374,7 +394,6 @@ router.post("/", async (req, res) => {
       const askMsg = `¿Querés cancelar este pedido?\n\n${summary}\n\nRespondé SI para confirmar.`;
       await sendWhatsAppMessage(from, askMsg);
       await saveMessage(from, "assistant", askMsg);
-      console.log(`⏸️  ${from}: esperando confirmación de cancelación del pedido ${order.id}`);
       return;
     }
   } catch (err) {
@@ -396,9 +415,6 @@ router.post("/", async (req, res) => {
     const fullHistory = welcomeCtx
       ? [{ role: "assistant", content: welcomeCtx }, { role: "user", content: text }]
       : [...rawHistory, { role: "user", content: text }];
-    console.log(`📚 Historia: ${rawHistory.length} mensajes${welcomeCtx ? " (+ contexto bienvenida)" : ""}`);
-    console.log(`🛒 Pedido activo: ${activePedido ? `id=${activePedido.id} estado=${activePedido.state}` : "ninguno"}`);
-    console.log(`👤 Cliente: ${customer?.name ?? "sin nombre"}`);
 
     const pedidoStatus = activePedido?.state ?? "none";
     const dynamicContext = (activePedido
@@ -1867,7 +1883,6 @@ Si alguna verificación falla, corregir antes de responder.
 `;
 
     const rawResponse = await askAI(fullHistory, systemPrompt);
-    console.log(`📦 Raw (últimos 300): ${rawResponse.slice(-300)}`);
 
     // Handle HANDOFF_HUMAN
     const isHandoffTrigger = rawResponse.includes("[HANDOFF_HUMAN]");
@@ -1877,8 +1892,6 @@ Si alguna verificación falla, corregir antes de responder.
       .replace(/\s*\[NOMBRE_DETECTADO\][\s\S]*?\[\/NOMBRE_DETECTADO\]/g, "")
       .replace(/\s*\[PENDING_MODIFICATION\][\s\S]*?\[\/PENDING_MODIFICATION\]/g, "")
       .trim();
-
-    console.log(`🤖 AI: ${aiResponse}`);
 
     // Parse ORDER_DATA
     const orderMatch = rawResponse.match(
@@ -1906,7 +1919,6 @@ Si alguna verificación falla, corregir antes de responder.
             setPendingConfirmation(from, pendingData).catch((err) =>
               console.error("❌ Error al guardar confirmación pendiente:", err.message)
             );
-            console.log(`⏳ ${from}: confirmación pendiente — ${newItems.length} ítem(s): ${newItems.map((i) => i.product_name).join(", ")}`);
           }
           interceptedForReadyDelivered = true;
 
@@ -1928,7 +1940,6 @@ Si alguna verificación falla, corregir antes de responder.
             const names = agotadoEnPedido.map((i) => i.product_name).join(", ");
             console.warn(`⛔ ORDER_DATA bloqueado — productos agotados: ${names}`);
           } else {
-            console.log("🧾 Pedido extraído:", JSON.stringify(orderData));
             upsertPedido({ ...orderData, cell: from }).catch((err) =>
               console.error("❌ Error al guardar pedido:", err.message),
             );
@@ -1954,7 +1965,6 @@ Si alguna verificación falla, corregir antes de responder.
           setPendingModification(from, modData).catch((err) =>
             console.error("❌ Error al guardar modificación pendiente:", err.message)
           );
-          console.log(`⏳ ${from}: modificación pendiente guardada`);
         } catch (err) {
           console.warn("⚠️ PENDING_MODIFICATION inválido:", err.message);
         }
@@ -1968,7 +1978,6 @@ Si alguna verificación falla, corregir antes de responder.
         const detectedName = nameMatch[1].trim();
         if (detectedName) {
           updateCustomerName(from, detectedName).catch(() => {});
-          console.log(`👤 Nombre detectado tempranamente: "${detectedName}"`);
         }
       }
     }
@@ -1982,7 +1991,6 @@ Si alguna verificación falla, corregir antes de responder.
       const backendMsg = "Tu pedido anterior ya está listo 👍\n\nSi querés hacer otro pedido lo creo como una orden nueva.";
       await sendWhatsAppMessage(from, backendMsg);
       await saveMessage(from, "assistant", backendMsg);
-      console.log(`🚫 ${from}: ORDER_DATA ignorado — pedido en estado ${activePedido.state}, esperando confirmación`);
       return;
     }
 
@@ -1992,11 +2000,10 @@ Si alguna verificación falla, corregir antes de responder.
       await saveHandoff(from).catch((err) =>
         console.error("❌ Error al guardar handoff:", err.message),
       );
-      console.log(`🤝 Handoff activado para ${from}`);
+      console.log("🤝 Handoff activado");
     }
 
     await sendWhatsAppMessage(from, aiResponse);
-    console.log("✅ Enviado");
   } catch (err) {
     console.error("❌ Error:", err.message);
     await sendWhatsAppMessage(

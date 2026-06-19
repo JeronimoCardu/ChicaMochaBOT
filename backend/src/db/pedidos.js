@@ -97,7 +97,7 @@ export async function upsertPedido(rawData) {
     return;
   }
 
-  const since = new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString();
+  const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
 
   const enrichedItems = await enrichItems(data.items || []);
   const subtotal = enrichedItems.reduce(

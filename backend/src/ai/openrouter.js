@@ -20,10 +20,9 @@ export async function askAI(history, systemPrompt) {
         model,
         messages: [{ role: "system", content: systemPrompt }, ...history],
       });
-      console.log(`✅ Modelo usado: ${model}`);
       return completion.choices[0].message.content;
     } catch (err) {
-      console.warn(`⚠️ ${model} falló: ${err.message}`);
+      console.warn(`⚠️ Modelo ${model} no disponible: ${err.message}`);
     }
   }
   throw new Error("Sin modelos disponibles. Intenta en unos minutos.");

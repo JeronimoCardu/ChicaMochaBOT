@@ -3,7 +3,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, MessageSquare, Package, BarChart3, Sun, Moon, ExternalLink, X } from "lucide-react";
+import { LayoutDashboard, MessageSquare, Package, BarChart3, Sun, Moon, ExternalLink, X, LogOut } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/components/providers/ThemeProvider";
 import { useSidebar } from "@/components/providers/ShellLayout";
@@ -24,6 +24,11 @@ export function Sidebar() {
   const { isOpen, close } = useSidebar();
   const { humanRequested, humanActive } = useConvCounts();
   const isDark = theme === "dark";
+
+  async function handleLogout() {
+    await fetch("/api/auth/login", { method: "DELETE" });
+    window.location.href = "/login";
+  }
 
   return (
     <>
@@ -123,6 +128,13 @@ export function Sidebar() {
             className="p-1.5 rounded-md text-gray-400 dark:text-zinc-600 hover:text-gray-700 dark:hover:text-zinc-300 hover:bg-gray-100 dark:hover:bg-white/5 transition-colors shrink-0"
           >
             {isDark ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />}
+          </button>
+          <button
+            onClick={handleLogout}
+            title="Cerrar sesión"
+            className="p-1.5 rounded-md text-gray-400 dark:text-zinc-600 hover:text-red-500 dark:hover:text-red-400 hover:bg-gray-100 dark:hover:bg-white/5 transition-colors shrink-0"
+          >
+            <LogOut className="w-3.5 h-3.5" />
           </button>
         </div>
       </aside>
