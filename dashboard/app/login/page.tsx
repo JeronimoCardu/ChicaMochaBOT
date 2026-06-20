@@ -1,13 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 
 export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [error,    setError]    = useState("");
   const [loading,  setLoading]  = useState(false);
-  const router = useRouter();
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -21,8 +19,9 @@ export default function LoginPage() {
     });
 
     if (res.ok) {
-      router.push("/");
-      router.refresh();
+      // Navegación completa para que el navegador envíe la cookie recién seteada
+      // y el middleware la vea sin depender del caché del router de Next.js.
+      window.location.href = "/";
     } else {
       setError("Contraseña incorrecta");
       setLoading(false);

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const PUBLIC_PREFIXES = ["/login", "/api/auth", "/api/cron"];
+const PUBLIC_PREFIXES = ["/login", "/api/auth", "/api/cron", "/privacy", "/terms", "/data-deletion"];
 
 function isPublic(pathname: string): boolean {
   return PUBLIC_PREFIXES.some(

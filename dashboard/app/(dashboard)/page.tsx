@@ -6,7 +6,6 @@ import { NewOrderButton } from "@/components/dashboard/NewOrderButton";
 export default function DashboardPage() {
   return (
     <div className="flex flex-col p-4 md:p-5 gap-4 md:gap-5 md:h-full">
-      {/* Header row */}
       <div className="flex items-center justify-between gap-3 shrink-0">
         <div>
           <h1 className="text-base md:text-lg font-semibold text-gray-900 dark:text-white mb-0.5">Pedidos</h1>
@@ -15,17 +14,14 @@ export default function DashboardPage() {
         <NewOrderButton />
       </div>
 
-      {/* Wait time config */}
       <div className="shrink-0">
         <WaitTimeConfig />
       </div>
 
-      {/* KPIs */}
       <div className="shrink-0">
         <KPIGrid />
       </div>
 
-      {/* Kanban */}
       <div className="md:flex-1 md:flex md:flex-col md:min-h-0">
         <KanbanBoard />
       </div>
