@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { HumanConversation, ConversationStatus } from "@/types";
 
@@ -123,13 +123,19 @@ export function useHumanConversations() {
     setUpdatedPhones((s) => { const n = new Set(s); n.delete(phone); return n; });
   }
 
-  const sorted = [...conversations].sort((a, b) => {
-    const diff = PRIORITY[a.status] - PRIORITY[b.status];
-    if (diff !== 0) return diff;
-    return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
-  });
+  const sorted = useMemo(
+    () => [...conversations].sort((a, b) => {
+      const diff = PRIORITY[a.status] - PRIORITY[b.status];
+      if (diff !== 0) return diff;
+      return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
+    }),
+    [conversations],
+  );
 
-  const humanRequestedCount = conversations.filter((c) => c.status === "human_requested").length;
+  const humanRequestedCount = useMemo(
+    () => conversations.filter((c) => c.status === "human_requested").length,
+    [conversations],
+  );
 
   return {
     conversations:  sorted,

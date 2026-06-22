@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useOrders } from "@/hooks/useOrders";
+import { useOrdersContext } from "@/context/OrdersContext";
 import { KanbanColumn } from "./KanbanColumn";
 import { Pedido, OrderState } from "@/types";
 import { cn } from "@/lib/utils";
@@ -15,7 +15,7 @@ const COLUMNS: { title: string; dotColor: string; filter: (o: Pedido) => boolean
 ];
 
 export function KanbanBoard() {
-  const { orders, loading, newOrderId, updatedIds, updateState, updateOrder, deleteOrder } = useOrders();
+  const { orders, loading, newOrderId, updatedIds, updateState, updateOrder, deleteOrder } = useOrdersContext();
 
   const [draggingId,     setDraggingId]     = useState<string | null>(null);
   const [draggingColIdx, setDraggingColIdx] = useState<number | null>(null);
