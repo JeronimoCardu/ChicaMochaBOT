@@ -1,6 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@/lib/supabase-server";
 
+export async function GET() {
+  const supabase = createServerClient();
+  const { data, error } = await supabase
+    .from("config")
+    .select("key, value")
+    .in("key", ["wait_time_pickup", "wait_time_delivery"]);
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  return NextResponse.json({ config: data ?? [] });
+}
+
 const VALID_KEYS = ["wait_time_pickup", "wait_time_delivery"] as const;
 type ConfigKey = (typeof VALID_KEYS)[number];
 

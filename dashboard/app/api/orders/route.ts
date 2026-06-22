@@ -1,5 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@/lib/supabase-server";
+import { todayStart } from "@/lib/utils";
+
+export async function GET() {
+  const supabase = createServerClient();
+  const { data, error } = await supabase
+    .from("pedidos")
+    .select("*")
+    .gte("created_at", todayStart())
+    .neq("state", "cancelled")
+    .order("created_at", { ascending: false });
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  return NextResponse.json({ orders: data ?? [] });
+}
 
 const SIZE_EXTRA: Record<string, number> = { doble: 0, triple: 2000, "cuádruple": 4000 };
 const JHON_SIZE_EXTRA: Record<string, number> = { simple: 0, doble: 2000, triple: 4000 };

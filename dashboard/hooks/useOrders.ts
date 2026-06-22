@@ -1,9 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { supabase } from "@/lib/supabase";
 import { Pedido, OrderState } from "@/types";
-import { todayStart } from "@/lib/utils";
 
 async function playTone(ctx: AudioContext, frequencies: number[], stepDuration: number, gainLevel: number) {
   if (ctx.state === "suspended") await ctx.resume();
@@ -20,20 +18,21 @@ async function playTone(ctx: AudioContext, frequencies: number[], stepDuration: 
 }
 
 export function useOrders() {
-  const [orders, setOrders]         = useState<Pedido[]>([]);
-  const [loading, setLoading]       = useState(true);
-  const [newOrderId, setNewOrderId] = useState<string | null>(null);
-  const [updatedIds, setUpdatedIds] = useState<Set<string>>(new Set());
-  // Maps order id → the column-state it was in when cancelled (for fade-out placement)
+  const [orders,         setOrders]         = useState<Pedido[]>([]);
+  const [loading,        setLoading]        = useState(true);
+  const [newOrderId,     setNewOrderId]     = useState<string | null>(null);
+  const [updatedIds,     setUpdatedIds]     = useState<Set<string>>(new Set());
   const [fadingCancelled, setFadingCancelled] = useState<Map<string, OrderState>>(new Map());
 
-  const audioCtxRef  = useRef<AudioContext | null>(null);
-  const locallyActed = useRef<Set<string>>(new Set());
-  const ordersRef    = useRef<Pedido[]>([]);
+  const audioCtxRef        = useRef<AudioContext | null>(null);
+  const locallyActed       = useRef<Set<string>>(new Set());
+  const ordersRef          = useRef<Pedido[]>([]);
+  const fadingCancelledRef = useRef<Map<string, OrderState>>(new Map());
 
   useEffect(() => { ordersRef.current = orders; }, [orders]);
+  useEffect(() => { fadingCancelledRef.current = fadingCancelled; }, [fadingCancelled]);
 
-  // Inicializar y resumir AudioContext en el primer click — política de autoplay
+  // Desbloquear AudioContext en el primer click del usuario
   useEffect(() => {
     const unlock = () => {
       if (!audioCtxRef.current) {
@@ -67,72 +66,63 @@ export function useOrders() {
     }, 3000);
   }
 
-  useEffect(() => {
-    const fetch = async () => {
-      const { data } = await supabase
-        .from("pedidos")
-        .select("*")
-        .gte("created_at", todayStart())
-        .neq("state", "cancelled")
-        .order("created_at", { ascending: false });
-      setOrders((data as Pedido[]) || []);
-      setLoading(false);
-    };
+  // Lee pedidos desde la API route (service role, bypasea RLS)
+  const pollOrders = useCallback(async () => {
+    const res = await fetch("/api/orders");
+    if (!res.ok) return;
+    const { orders: incoming } = (await res.json()) as { orders: Pedido[] };
 
-    fetch();
+    const prev      = ordersRef.current;
+    const prevMap   = new Map(prev.map((o) => [o.id, o]));
+    const fadingIds = new Set([...fadingCancelledRef.current.keys()]);
 
-    const channel = supabase
-      .channel("orders-changes")
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "pedidos" }, (payload) => {
-        const newOrder = payload.new as Pedido;
-        setOrders((prev) => [newOrder, ...prev]);
-        setNewOrderId(newOrder.id);
+    // Detectar pedidos nuevos que no fueron creados por esta sesión
+    for (const o of incoming) {
+      if (!prevMap.has(o.id) && !locallyActed.current.has(o.id)) {
+        setNewOrderId(o.id);
         playNewOrder();
         setTimeout(() => setNewOrderId(null), 3000);
-      })
-      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "pedidos" }, (payload) => {
-        const updated = payload.new as Pedido;
+        break; // una sola notificación por ciclo de poll
+      }
+    }
 
-        if (updated.state === "cancelled") {
-          if (!locallyActed.current.has(updated.id)) {
-            // Cliente canceló desde WhatsApp — hacer fade-out
-            const original = ordersRef.current.find((o) => o.id === updated.id);
-            const originalState = (original?.state ?? "pending") as OrderState;
-            setOrders((prev) => prev.map((o) => (o.id === updated.id ? updated : o)));
-            startFadeOut(updated.id, originalState);
-          }
-          // Si fue el operador (locallyActed): cancelOrder() ya hizo el fade-out local
-          return;
-        }
+    // Detectar cambios de estado externos (cliente cancela por WhatsApp, etc.)
+    for (const o of incoming) {
+      const p = prevMap.get(o.id);
+      if (p && !locallyActed.current.has(o.id) && p.state !== o.state) {
+        setUpdatedIds((s) => new Set([...s, o.id]));
+        playClientUpdate();
+        break;
+      }
+    }
 
-        setOrders((prev) => prev.map((o) => (o.id === updated.id ? updated : o)));
-
-        if (!locallyActed.current.has(updated.id)) {
-          setUpdatedIds((prev) => new Set([...prev, updated.id]));
-          playClientUpdate();
-        }
-      })
-      .subscribe();
-
-    return () => { supabase.removeChannel(channel); };
+    // Preservar pedidos en fade-out durante su animación (3s), reemplazar el resto
+    const fadingOrders = prev.filter((o) => fadingIds.has(o.id));
+    setOrders([...fadingOrders, ...incoming.filter((o) => !fadingIds.has(o.id))]);
+    setLoading(false);
   }, [playNewOrder, playClientUpdate]);
+
+  useEffect(() => {
+    pollOrders();
+    const interval = setInterval(pollOrders, 5000);
+    return () => clearInterval(interval);
+  }, [pollOrders]);
+
+  // ── Mutaciones — ya usaban API routes con service role, sin cambios ──
 
   const updateState = async (id: string, state: OrderState): Promise<boolean> => {
     locallyActed.current.add(id);
     setTimeout(() => locallyActed.current.delete(id), 4000);
-
     try {
       const res = await fetch(`/api/orders/${id}`, {
-        method: "PATCH",
+        method:  "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ state }),
+        body:    JSON.stringify({ state }),
       });
       if (!res.ok) return false;
-
       const extra: Partial<Pedido> = {};
       if (state === "delivered") extra.delivered_at = new Date().toISOString();
       if (state === "confirmed") extra.confirmed_at = new Date().toISOString();
-
       setOrders((prev) => prev.map((o) => (o.id === id ? { ...o, state, ...extra } : o)));
       setUpdatedIds((prev) => { const s = new Set(prev); s.delete(id); return s; });
       return true;
@@ -144,16 +134,11 @@ export function useOrders() {
   const cancelOrder = useCallback(async (id: string) => {
     const original = ordersRef.current.find((o) => o.id === id);
     if (!original) return;
-
     const originalState = original.state;
-
     locallyActed.current.add(id);
     setTimeout(() => locallyActed.current.delete(id), 4000);
-
-    // Optimistic UI: mark as cancelled and start fade
     setOrders((prev) => prev.map((o) => (o.id === id ? { ...o, state: "cancelled" } : o)));
     startFadeOut(id, originalState);
-
     try {
       await fetch(`/api/orders/${id}/cancel`, { method: "POST" });
     } catch (err) {
@@ -166,9 +151,9 @@ export function useOrders() {
     setTimeout(() => locallyActed.current.delete(id), 4000);
     try {
       const res = await fetch(`/api/orders/${id}`, {
-        method: "PUT",
+        method:  "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
+        body:    JSON.stringify(data),
       });
       if (!res.ok) return false;
       const { pedido: updated } = await res.json();
@@ -198,5 +183,16 @@ export function useOrders() {
     setTimeout(() => setNewOrderId(null), 3000);
   }, []);
 
-  return { orders, loading, newOrderId, updatedIds, fadingCancelled, updateState, cancelOrder, updateOrder, deleteOrder, addOrder };
+  return {
+    orders,
+    loading,
+    newOrderId,
+    updatedIds,
+    fadingCancelled,
+    updateState,
+    cancelOrder,
+    updateOrder,
+    deleteOrder,
+    addOrder,
+  };
 }
